@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#08090d" />
+    <meta name="color-scheme" content="dark" />
+
+    <title>Sam Henderson — Building automation, systems integration, innovation</title>
+    <meta
+      name="description"
+      content="Sam Henderson — building automation specialist and systems integrator. Siemens, BACnet, Desigo CC, smart-building strategy. Field-tested across hospitals, labs, and universities."
+    />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Sam Henderson — Building automation, systems integration, innovation" />
+    <meta property="og:description" content="Where automation, creativity, and innovation intersect." />
+
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2308090d'/%3E%3Cpath d='M18 40c0-12 28-12 28-24' stroke='%234ea8ff' stroke-width='4' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='46' cy='46' r='4' fill='%234ea8ff'/%3E%3C/svg%3E" />
+
+    <script type="module" src="/src/main.js"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <header class="site-header" role="banner">
+      <p class="site-header__mark"><strong>SH</strong> — Sam Henderson</p>
+      <nav class="site-header__nav" aria-label="Primary">
+        <!-- Nav targets get wired up as scenes come online -->
+        <a href="#work">Work</a>
+        <a href="#skills">Skills</a>
+        <a href="#contact">Contact</a>
+      </nav>
+    </header>
+
+    <main id="main">
+      <!-- ============================================================
+           SCENE 1 — HERO / THE WORKSHOP
+           Vertical scroll. Camera pushes through a dim, late-night
+           workshop. Layered SVG dioramas (placeholders below) parallax
+           at different depths. Mouse parallax composes on top.
+           ============================================================ -->
+      <section
+        class="scene scene--hero"
+        data-scene="hero"
+        aria-labelledby="hero-heading"
+      >
+        <div class="hero__inner">
+          <div class="hero__stage" aria-hidden="true">
+
+            <!-- PLACEHOLDER: night sky + window + distant skyline, replace with detailed art -->
+            <div class="layer layer--sky" data-parallax="0.20">
+              <div class="layer-inner">
+                <svg viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+                  <defs>
+                    <linearGradient id="skyGrad" x1="0" x2="0" y1="0" y2="1">
+                      <stop offset="0%"  stop-color="#0b1224"/>
+                      <stop offset="60%" stop-color="#08111f"/>
+                      <stop offset="100%" stop-color="#04070d"/>
+                    </linearGradient>
+                  </defs>
+                  <!-- Sky -->
+                  <rect width="1600" height="1000" fill="url(#skyGrad)"/>
+                  <!-- Stars (placeholder dots) -->
+                  <g fill="#cdd9ff" opacity="0.6">
+                    <circle cx="120" cy="120" r="1.2"/>
+                    <circle cx="260" cy="80"  r="1"/>
+                    <circle cx="430" cy="180" r="1.4"/>
+                    <circle cx="640" cy="100" r="0.9"/>
+                    <circle cx="820" cy="160" r="1.2"/>
+                    <circle cx="1010" cy="60" r="1"/>
+                    <circle cx="1180" cy="140" r="1.4"/>
+                    <circle cx="1340" cy="200" r="1"/>
+                    <circle cx="1480" cy="90"  r="1.2"/>
+                    <circle cx="1540" cy="240" r="0.9"/>
+                    <circle cx="200"  cy="320" r="0.8"/>
+                    <circle cx="900"  cy="280" r="1"/>
+                  </g>
+                  <!-- Distant city skyline -->
+                  <g fill="#0a1424">
+                    <rect x="40"   y="540" width="120" height="360"/>
+                    <rect x="180"  y="600" width="90"  height="300"/>
+                    <rect x="290"  y="500" width="140" height="400"/>
+                    <rect x="450"  y="580" width="100" height="320"/>
+                    <rect x="570"  y="520" width="160" height="380"/>
+                    <rect x="750"  y="600" width="110" height="300"/>
+                    <rect x="880"  y="470" width="170" height="430"/>
+                    <rect x="1070" y="560" width="120" height="340"/>
+                    <rect x="1210" y="510" width="140" height="390"/>
+                    <rect x="1370" y="600" width="100" height="300"/>
+                    <rect x="1490" y="540" width="110" height="360"/>
+                  </g>
+                  <!-- Window lights -->
+                  <g fill="#f4d58a" opacity="0.85">
+                    <rect x="60"  y="600" width="6" height="6"/>
+                    <rect x="80"  y="660" width="6" height="6"/>
+                    <rect x="120" y="700" width="6" height="6"/>
+                    <rect x="200" y="650" width="6" height="6"/>
+                    <rect x="320" y="560" width="6" height="6"/>
+                    <rect x="370" y="640" width="6" height="6"/>
+                    <rect x="480" y="640" width="6" height="6"/>
+                    <rect x="600" y="580" width="6" height="6"/>
+                    <rect x="660" y="660" width="6" height="6"/>
+                    <rect x="780" y="660" width="6" height="6"/>
+                    <rect x="900" y="540" width="6" height="6"/>
+                    <rect x="980" y="620" width="6" height="6"/>
+                    <rect x="1100" y="620" width="6" height="6"/>
+                    <rect x="1240" y="580" width="6" height="6"/>
+                    <rect x="1320" y="660" width="6" height="6"/>
+                    <rect x="1420" y="660" width="6" height="6"/>
+                    <rect x="1520" y="600" width="6" height="6"/>
+                  </g>
+                  <!-- Window frame, hinting at the room context -->
+                  <g stroke="#11151c" stroke-width="14" fill="none">
+                    <rect x="160" y="180" width="1280" height="640"/>
+                    <line x1="800" y1="180" x2="800" y2="820"/>
+                    <line x1="160" y1="500" x2="1440" y2="500"/>
+                  </g>
+                </svg>
+              </div>
+            </div>
+
+            <!-- PLACEHOLDER: bookshelves flanking left & right, replace with detailed art -->
+            <div class="layer layer--shelves" data-parallax="0.10" data-mobile-hide>
+              <div class="layer-inner" data-mouse="6">
+                <svg viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+                  <!-- Left shelf -->
+                  <g>
+                    <rect x="0" y="120" width="220" height="780" fill="#0a0d13"/>
+                    <g stroke="#1a2030" stroke-width="3">
+                      <line x1="0" y1="260" x2="220" y2="260"/>
+                      <line x1="0" y1="420" x2="220" y2="420"/>
+                      <line x1="0" y1="580" x2="220" y2="580"/>
+                      <line x1="0" y1="740" x2="220" y2="740"/>
+                    </g>
+                    <!-- Books -->
+                    <g>
+                      <rect x="20"  y="160" width="22" height="100" fill="#2b3a55"/>
+                      <rect x="46"  y="170" width="18" height="90"  fill="#3a4d6e"/>
+                      <rect x="70"  y="155" width="26" height="105" fill="#22324a"/>
+                      <rect x="100" y="180" width="20" height="80"  fill="#4ea8ff" opacity="0.55"/>
+                      <rect x="124" y="160" width="24" height="100" fill="#1a2436"/>
+                      <rect x="152" y="170" width="20" height="90"  fill="#2b3a55"/>
+                      <rect x="176" y="150" width="28" height="110" fill="#33476a"/>
+
+                      <rect x="20"  y="320" width="24" height="100" fill="#1a2436"/>
+                      <rect x="48"  y="340" width="18" height="80"  fill="#33476a"/>
+                      <rect x="70"  y="320" width="26" height="100" fill="#2b3a55"/>
+                      <rect x="100" y="335" width="20" height="85"  fill="#22324a"/>
+                      <rect x="124" y="325" width="22" height="95"  fill="#4ea8ff" opacity="0.4"/>
+                      <rect x="150" y="315" width="26" height="105" fill="#1a2436"/>
+                      <rect x="180" y="335" width="22" height="85"  fill="#2b3a55"/>
+                    </g>
+                  </g>
+                  <!-- Right shelf -->
+                  <g>
+                    <rect x="1380" y="120" width="220" height="780" fill="#0a0d13"/>
+                    <g stroke="#1a2030" stroke-width="3">
+                      <line x1="1380" y1="260" x2="1600" y2="260"/>
+                      <line x1="1380" y1="420" x2="1600" y2="420"/>
+                      <line x1="1380" y1="580" x2="1600" y2="580"/>
+                      <line x1="1380" y1="740" x2="1600" y2="740"/>
+                    </g>
+                    <g>
+                      <rect x="1400" y="160" width="22" height="100" fill="#33476a"/>
+                      <rect x="1426" y="170" width="18" height="90"  fill="#22324a"/>
+                      <rect x="1450" y="155" width="26" height="105" fill="#1a2436"/>
+                      <rect x="1480" y="180" width="20" height="80"  fill="#4ea8ff" opacity="0.5"/>
+                      <rect x="1504" y="160" width="24" height="100" fill="#2b3a55"/>
+                      <rect x="1532" y="170" width="20" height="90"  fill="#33476a"/>
+                      <rect x="1556" y="150" width="28" height="110" fill="#22324a"/>
+
+                      <rect x="1400" y="600" width="24" height="100" fill="#2b3a55"/>
+                      <rect x="1428" y="620" width="18" height="80"  fill="#33476a"/>
+                      <rect x="1450" y="600" width="26" height="100" fill="#1a2436"/>
+                      <rect x="1480" y="615" width="20" height="85"  fill="#22324a"/>
+                      <rect x="1504" y="605" width="22" height="95"  fill="#4ea8ff" opacity="0.35"/>
+                      <rect x="1530" y="595" width="26" height="105" fill="#1a2436"/>
+                      <rect x="1560" y="615" width="22" height="85"  fill="#33476a"/>
+                    </g>
+                  </g>
+                </svg>
+              </div>
+            </div>
+
+            <!-- PLACEHOLDER: desk surface + chair silhouette, replace with detailed art -->
+            <div class="layer layer--desk" data-parallax="-0.05">
+              <div class="layer-inner" data-mouse="10">
+                <svg viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+                  <!-- Desk surface -->
+                  <rect x="0" y="700" width="1600" height="40" fill="#0d1219"/>
+                  <rect x="0" y="740" width="1600" height="260" fill="#06090e"/>
+                  <!-- Desk edge highlight (electric blue spill) -->
+                  <rect x="0" y="700" width="1600" height="2" fill="#4ea8ff" opacity="0.25"/>
+                  <!-- Chair silhouette -->
+                  <g fill="#040608">
+                    <rect x="700" y="760" width="200" height="240" rx="14"/>
+                    <rect x="690" y="760" width="220" height="20"  rx="6"/>
+                  </g>
+                </svg>
+              </div>
+            </div>
+
+            <!-- PLACEHOLDER: monitor with glowing screen + code lines, replace with detailed art -->
+            <div class="layer layer--monitor" data-parallax="-0.12">
+              <div class="layer-inner" data-mouse="14">
+                <svg viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+                  <defs>
+                    <radialGradient id="monitorGlow" cx="50%" cy="50%" r="60%">
+                      <stop offset="0%"  stop-color="#4ea8ff" stop-opacity="0.55"/>
+                      <stop offset="60%" stop-color="#4ea8ff" stop-opacity="0.10"/>
+                      <stop offset="100%" stop-color="#4ea8ff" stop-opacity="0"/>
+                    </radialGradient>
+                    <linearGradient id="screenGrad" x1="0" x2="0" y1="0" y2="1">
+                      <stop offset="0%"  stop-color="#0c1a2e"/>
+                      <stop offset="100%" stop-color="#04101e"/>
+                    </linearGradient>
+                  </defs>
+                  <!-- Glow halo behind monitor -->
+                  <ellipse cx="800" cy="500" rx="640" ry="380" fill="url(#monitorGlow)"/>
+                  <!-- Monitor stand -->
+                  <rect x="770" y="640" width="60" height="60" fill="#0a0d13"/>
+                  <rect x="700" y="690" width="200" height="14" fill="#0a0d13" rx="4"/>
+                  <!-- Bezel -->
+                  <rect x="500" y="280" width="600" height="380" rx="14" fill="#0a0d13"/>
+                  <!-- Screen -->
+                  <rect x="516" y="296" width="568" height="348" rx="6" fill="url(#screenGrad)"/>
+                  <!-- "Code" lines -->
+                  <g>
+                    <rect x="540" y="320" width="120" height="8" fill="#4ea8ff" opacity="0.85"/>
+                    <rect x="540" y="340" width="220" height="8" fill="#7ec0ff" opacity="0.5"/>
+                    <rect x="560" y="360" width="180" height="8" fill="#4ea8ff" opacity="0.65"/>
+                    <rect x="560" y="380" width="240" height="8" fill="#7ec0ff" opacity="0.4"/>
+                    <rect x="580" y="400" width="160" height="8" fill="#4ea8ff" opacity="0.7"/>
+                    <rect x="540" y="430" width="200" height="8" fill="#7ec0ff" opacity="0.45"/>
+                    <rect x="540" y="450" width="280" height="8" fill="#4ea8ff" opacity="0.6"/>
+                    <rect x="560" y="470" width="140" height="8" fill="#7ec0ff" opacity="0.5"/>
+                    <rect x="540" y="500" width="240" height="8" fill="#4ea8ff" opacity="0.7"/>
+                    <rect x="560" y="520" width="180" height="8" fill="#7ec0ff" opacity="0.4"/>
+                    <!-- Hint of a graphic / chart on the right side -->
+                    <rect x="860" y="320" width="200" height="180" fill="#0a1426" stroke="#4ea8ff" stroke-opacity="0.4" stroke-width="1"/>
+                    <polyline points="870,470 900,440 930,450 960,400 990,420 1020,360 1050,380"
+                              fill="none" stroke="#4ea8ff" stroke-width="2" opacity="0.85"/>
+                  </g>
+                </svg>
+              </div>
+            </div>
+
+            <!-- PLACEHOLDER: foreground desk objects (mug, keyboard, lamp glow), replace with detailed art -->
+            <div class="layer layer--foreground" data-parallax="-0.25" data-mobile-hide>
+              <div class="layer-inner" data-mouse="22">
+                <svg viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+                  <defs>
+                    <radialGradient id="lampGlow" cx="50%" cy="50%" r="50%">
+                      <stop offset="0%"  stop-color="#f4b46d" stop-opacity="0.55"/>
+                      <stop offset="100%" stop-color="#f4b46d" stop-opacity="0"/>
+                    </radialGradient>
+                  </defs>
+                  <!-- Desk lamp warm glow (left side) -->
+                  <ellipse cx="240" cy="720" rx="260" ry="180" fill="url(#lampGlow)"/>
+                  <!-- Mug -->
+                  <g fill="#0a0d13">
+                    <rect x="180" y="700" width="90" height="100" rx="6"/>
+                    <path d="M270 720 q30 10 30 35 t-30 35" fill="none" stroke="#0a0d13" stroke-width="8"/>
+                  </g>
+                  <ellipse cx="225" cy="700" rx="44" ry="8" fill="#1a2030"/>
+                  <!-- Steam wisp -->
+                  <path d="M210 685 q-6 -16 4 -28 t-4 -28" fill="none" stroke="#cdd9ff" stroke-width="2" opacity="0.25"/>
+                  <path d="M232 685 q6 -18 -4 -32 t6 -28" fill="none" stroke="#cdd9ff" stroke-width="2" opacity="0.18"/>
+                  <!-- Keyboard slab -->
+                  <rect x="560" y="760" width="480" height="60" rx="8" fill="#080b10"/>
+                  <g fill="#11161f">
+                    <rect x="580" y="772" width="40" height="36" rx="3"/>
+                    <rect x="624" y="772" width="40" height="36" rx="3"/>
+                    <rect x="668" y="772" width="40" height="36" rx="3"/>
+                    <rect x="712" y="772" width="40" height="36" rx="3"/>
+                    <rect x="756" y="772" width="40" height="36" rx="3"/>
+                    <rect x="800" y="772" width="40" height="36" rx="3"/>
+                    <rect x="844" y="772" width="40" height="36" rx="3"/>
+                    <rect x="888" y="772" width="40" height="36" rx="3"/>
+                    <rect x="932" y="772" width="40" height="36" rx="3"/>
+                    <rect x="976" y="772" width="40" height="36" rx="3"/>
+                  </g>
+                  <!-- Notebook on the right -->
+                  <g>
+                    <rect x="1180" y="770" width="220" height="40" rx="4" fill="#0a0d13"/>
+                    <rect x="1180" y="770" width="220" height="6"  fill="#4ea8ff" opacity="0.5"/>
+                  </g>
+                </svg>
+              </div>
+            </div>
+
+          </div><!-- /.hero__stage -->
+
+          <div class="hero__content">
+            <p class="hero__eyebrow">Sam Henderson</p>
+            <h1 id="hero-heading" class="hero__title">
+              <span>Building smarter systems.</span>
+              <span>Solving real-world problems.</span>
+              <span>Creating <em>what's next.</em></span>
+            </h1>
+            <p class="hero__subtitle">
+              Building Automation Specialist · Systems Integrator · Creative Problem Solver
+            </p>
+          </div>
+
+          <div class="hero__cue" aria-hidden="true">
+            <span class="hero__cue-label">Scroll</span>
+            <span class="hero__cue-line"></span>
+          </div>
+        </div><!-- /.hero__inner -->
+      </section>
+
+      <!-- Subsequent scenes (Dive, Project Rooms, Skills Constellation,
+           Daylight Contact) will be appended here in following passes. -->
+    </main>
+  </body>
+</html>

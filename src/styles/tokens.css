@@ -1,0 +1,79 @@
+/* ──────────────────────────────────────────────────────────────
+   Design tokens — palette, type, spacing, motion.
+   Edit values here to retheme the whole site.
+   ────────────────────────────────────────────────────────────── */
+
+:root {
+  /* Palette ── deep charcoal / matte black with electric blue accent */
+  --color-bg: #08090d;
+  --color-bg-elev: #0e1118;
+  --color-surface: #14181f;
+  --color-surface-2: #1a1f29;
+
+  --color-text: #f1f3f7;
+  --color-text-muted: #9aa3b2;
+  --color-text-dim: #5b6473;
+
+  --color-accent: #4ea8ff;
+  --color-accent-soft: #7ec0ff;
+  --color-accent-glow: rgba(78, 168, 255, 0.45);
+
+  /* Reserved for the daylight contact scene */
+  --color-warm: #f4b46d;
+  --color-warm-glow: rgba(244, 180, 109, 0.35);
+
+  /* Glass surfaces */
+  --glass-bg: rgba(20, 24, 31, 0.55);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-blur: 18px;
+
+  /* Type ── system stack now; swap to Space Grotesk / Sora / Inter later */
+  --font-display: ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-body: var(--font-display);
+  --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Consolas,
+    "Liberation Mono", Menlo, monospace;
+
+  --fs-eyebrow: clamp(0.75rem, 0.7rem + 0.2vw, 0.85rem);
+  --fs-body: clamp(1rem, 0.95rem + 0.2vw, 1.125rem);
+  --fs-lead: clamp(1.125rem, 1rem + 0.5vw, 1.35rem);
+  --fs-h2: clamp(1.75rem, 1.4rem + 1.6vw, 2.75rem);
+  --fs-h1: clamp(2.5rem, 1.6rem + 4.2vw, 5.5rem);
+  --fs-display: clamp(3rem, 2rem + 6vw, 7rem);
+
+  --lh-tight: 1.05;
+  --lh-snug: 1.2;
+  --lh-body: 1.6;
+
+  --tracking-tight: -0.02em;
+  --tracking-wide: 0.18em;
+
+  /* Spacing scale */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+  --space-8: 4rem;
+  --space-9: 6rem;
+
+  /* Radii */
+  --radius-sm: 6px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+  --radius-pill: 999px;
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-fast: 180ms;
+  --dur-base: 320ms;
+  --dur-slow: 600ms;
+
+  /* Layout */
+  --container-max: 1200px;
+  --gutter: clamp(1rem, 4vw, 2.5rem);
+  --header-h: 64px;
+}

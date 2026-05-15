@@ -463,8 +463,532 @@
         </div><!-- /.dive__inner -->
       </section>
 
-      <!-- Subsequent scenes (Project Rooms horizontal pivot, Skills
-           Constellation, Daylight Contact) will be appended here. -->
+      <!-- ============================================================
+           SCENE 3 — HORIZONTAL GALLERY (PROJECT ROOMS)
+           Pinned section. Vertical scroll pans the camera across five
+           themed "rooms": Builder · Field · Team · What's Next ·
+           Curiosity. Each room is its own diorama with sub-layer
+           parallax. Falls back to a vertical stack under
+           prefers-reduced-motion or before JS upgrades.
+           ============================================================ -->
+      <section
+        class="scene scene--gallery"
+        data-scene="gallery"
+        aria-labelledby="gallery-heading"
+      >
+        <h2 id="gallery-heading" class="sr-only">Selected work and direction</h2>
+
+        <div class="gallery__inner">
+
+          <!-- PLACEHOLDER: persistent backdrop — perspective grid continuation from The Dive -->
+          <div class="gallery__bg" aria-hidden="true">
+            <svg viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="galleryBg" x1="0" x2="0" y1="0" y2="1">
+                  <stop offset="0%"  stop-color="#02050a"/>
+                  <stop offset="50%" stop-color="#04081020"/>
+                  <stop offset="100%" stop-color="#02050a"/>
+                </linearGradient>
+              </defs>
+              <rect width="1600" height="900" fill="#02050a"/>
+              <g stroke="#4ea8ff" stroke-width="1" opacity="0.25">
+                <line x1="0" y1="450" x2="1600" y2="450"/>
+              </g>
+              <g stroke="#4ea8ff" stroke-width="1" opacity="0.18">
+                <line x1="800" y1="450" x2="-300" y2="900"/>
+                <line x1="800" y1="450" x2="-80"  y2="900"/>
+                <line x1="800" y1="450" x2="120"  y2="900"/>
+                <line x1="800" y1="450" x2="320"  y2="900"/>
+                <line x1="800" y1="450" x2="520"  y2="900"/>
+                <line x1="800" y1="450" x2="700"  y2="900"/>
+                <line x1="800" y1="450" x2="900"  y2="900"/>
+                <line x1="800" y1="450" x2="1080" y2="900"/>
+                <line x1="800" y1="450" x2="1280" y2="900"/>
+                <line x1="800" y1="450" x2="1480" y2="900"/>
+                <line x1="800" y1="450" x2="1680" y2="900"/>
+                <line x1="800" y1="450" x2="1900" y2="900"/>
+              </g>
+              <g stroke="#4ea8ff" stroke-width="1" opacity="0.14">
+                <line x1="0" y1="465" x2="1600" y2="465"/>
+                <line x1="0" y1="490" x2="1600" y2="490"/>
+                <line x1="0" y1="525" x2="1600" y2="525"/>
+                <line x1="0" y1="575" x2="1600" y2="575"/>
+                <line x1="0" y1="645" x2="1600" y2="645"/>
+                <line x1="0" y1="740" x2="1600" y2="740"/>
+              </g>
+            </svg>
+          </div>
+
+          <div class="gallery__track">
+
+            <!-- ─── ROOM 01 — THE BUILDER (About) ─── -->
+            <article class="room room--builder" id="room-builder" data-room-index="1">
+              <div class="room__diorama" aria-hidden="true">
+                <!-- PLACEHOLDER: blueprint grid back layer, replace with detailed art -->
+                <div class="room__layer" data-parallax="0.18">
+                  <svg viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+                    <g stroke="#1a2940" stroke-width="0.7" opacity="0.55">
+                      <line x1="0" y1="100" x2="1600" y2="100"/>
+                      <line x1="0" y1="200" x2="1600" y2="200"/>
+                      <line x1="0" y1="300" x2="1600" y2="300"/>
+                      <line x1="0" y1="400" x2="1600" y2="400"/>
+                      <line x1="0" y1="500" x2="1600" y2="500"/>
+                      <line x1="0" y1="600" x2="1600" y2="600"/>
+                      <line x1="0" y1="700" x2="1600" y2="700"/>
+                      <line x1="0" y1="800" x2="1600" y2="800"/>
+                      <line x1="200" y1="0" x2="200" y2="900"/>
+                      <line x1="400" y1="0" x2="400" y2="900"/>
+                      <line x1="600" y1="0" x2="600" y2="900"/>
+                      <line x1="800" y1="0" x2="800" y2="900"/>
+                      <line x1="1000" y1="0" x2="1000" y2="900"/>
+                      <line x1="1200" y1="0" x2="1200" y2="900"/>
+                      <line x1="1400" y1="0" x2="1400" y2="900"/>
+                    </g>
+                    <g stroke="#4ea8ff" stroke-width="1" opacity="0.3">
+                      <line x1="380" y1="180" x2="420" y2="180"/>
+                      <line x1="400" y1="160" x2="400" y2="200"/>
+                      <line x1="1180" y1="580" x2="1220" y2="580"/>
+                      <line x1="1200" y1="560" x2="1200" y2="600"/>
+                    </g>
+                  </svg>
+                </div>
+                <!-- PLACEHOLDER: building cross-section mid layer, replace with detailed art -->
+                <div class="room__layer" data-parallax="-0.05">
+                  <svg viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+                    <g stroke="#4ea8ff" fill="none" stroke-width="1.2" opacity="0.45">
+                      <rect x="900" y="180" width="500" height="540"/>
+                      <line x1="900" y1="300" x2="1400" y2="300"/>
+                      <line x1="900" y1="420" x2="1400" y2="420"/>
+                      <line x1="900" y1="540" x2="1400" y2="540"/>
+                      <line x1="900" y1="660" x2="1400" y2="660"/>
+                      <line x1="1150" y1="180" x2="1150" y2="720"/>
+                      <rect x="1400" y="240" width="40" height="440" stroke-dasharray="4 4"/>
+                      <rect x="1440" y="280" width="60" height="16"/>
+                      <rect x="1440" y="400" width="60" height="16"/>
+                      <rect x="1440" y="520" width="60" height="16"/>
+                      <rect x="1440" y="640" width="60" height="16"/>
+                    </g>
+                    <g fill="#4ea8ff" opacity="0.7">
+                      <circle cx="1010" cy="288" r="3"/>
+                      <circle cx="1010" cy="408" r="3"/>
+                      <circle cx="1010" cy="528" r="3"/>
+                      <circle cx="1010" cy="648" r="3"/>
+                    </g>
+                  </svg>
+                </div>
+                <!-- PLACEHOLDER: control cabinet foreground layer, replace with detailed art -->
+                <div class="room__layer" data-parallax="-0.20">
+                  <svg viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+                    <g fill="#06090f" stroke="#1a2940" stroke-width="2">
+                      <rect x="1180" y="540" width="280" height="320" rx="6"/>
+                      <line x1="1320" y1="540" x2="1320" y2="860" stroke="#0c1424"/>
+                    </g>
+                    <g>
+                      <circle cx="1210" cy="580" r="4" fill="#4ea8ff"/>
+                      <circle cx="1228" cy="580" r="4" fill="#7ec0ff" opacity="0.4"/>
+                      <circle cx="1246" cy="580" r="4" fill="#4ea8ff"/>
+                      <rect x="1200" y="605" width="100" height="6" fill="#0c1424"/>
+                      <rect x="1200" y="605" width="64"  height="6" fill="#4ea8ff"/>
+                      <g stroke="#1a2940" stroke-width="1">
+                        <line x1="1200" y1="630" x2="1300" y2="630"/>
+                        <line x1="1200" y1="645" x2="1300" y2="645"/>
+                        <line x1="1200" y1="660" x2="1300" y2="660"/>
+                      </g>
+                      <circle cx="1310" cy="690" r="5" fill="#4ea8ff"/>
+                      <circle cx="1330" cy="690" r="5" fill="#4ea8ff" opacity="0.4"/>
+                    </g>
+                  </svg>
+                </div>
+              </div>
+
+              <div class="room__content">
+                <p class="room__number">01 / 05 — The Builder</p>
+                <h3 class="room__heading">Hands-on the systems people don't <em>see</em>.</h3>
+                <p class="room__lead">
+                  Building automation specialist working on Siemens, BACnet, and smart-building strategy across hospitals, labs, universities, government, and commercial sites. Field-built reputation: solve the hard problems, keep the project moving, leave the work in a state the next tech will trust.
+                </p>
+                <ul class="room__chips">
+                  <li>Siemens</li>
+                  <li>BACnet</li>
+                  <li>Desigo CC</li>
+                  <li>PPCL</li>
+                  <li>Smart Buildings</li>
+                </ul>
+              </div>
+            </article>
+
+            <!-- ─── ROOM 02 — THE FIELD (Industries) ─── -->
+            <article class="room room--field" id="room-field" data-room-index="2">
+              <div class="room__diorama" aria-hidden="true">
+                <!-- PLACEHOLDER: distant skyline back layer, replace with detailed art -->
+                <div class="room__layer" data-parallax="0.18">
+                  <svg viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+                    <g fill="#0a1424" opacity="0.85">
+                      <rect x="40"   y="540" width="120" height="360"/>
+                      <rect x="180"  y="600" width="90"  height="300"/>
+                      <rect x="290"  y="500" width="140" height="400"/>
+                      <rect x="450"  y="580" width="100" height="320"/>
+                      <rect x="570"  y="520" width="160" height="380"/>
+                      <rect x="750"  y="600" width="110" height="300"/>
+                      <rect x="880"  y="470" width="170" height="430"/>
+                      <rect x="1070" y="560" width="120" height="340"/>
+                      <rect x="1210" y="510" width="140" height="390"/>
+                      <rect x="1370" y="600" width="100" height="300"/>
+                      <rect x="1490" y="540" width="110" height="360"/>
+                    </g>
+                    <g fill="#f4d58a" opacity="0.5">
+                      <rect x="80"  y="660" width="5" height="5"/>
+                      <rect x="200" y="650" width="5" height="5"/>
+                      <rect x="370" y="640" width="5" height="5"/>
+                      <rect x="660" y="660" width="5" height="5"/>
+                      <rect x="900" y="540" width="5" height="5"/>
+                      <rect x="1100" y="620" width="5" height="5"/>
+                      <rect x="1420" y="660" width="5" height="5"/>
+                    </g>
+                  </svg>
+                </div>
+                <!-- PLACEHOLDER: mid-ground labeled buildings (hospital / lab / university / gov / commercial), replace with detailed art -->
+                <div class="room__layer" data-parallax="-0.05">
+                  <svg viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+                    <g fill="none" stroke="#4ea8ff" stroke-width="1.5" opacity="0.55">
+                      <!-- Hospital (cross icon on top) -->
+                      <rect x="1000" y="400" width="120" height="320"/>
+                      <g stroke-width="2">
+                        <line x1="1052" y1="430" x2="1068" y2="430"/>
+                        <line x1="1060" y1="422" x2="1060" y2="438"/>
+                      </g>
+                      <!-- Lab (beaker) -->
+                      <rect x="1170" y="450" width="100" height="270"/>
+                      <path d="M1210 470 v25 l-12 20 v15 h36 v-15 l-12 -20 v-25 z"/>
+                      <!-- University (columns) -->
+                      <rect x="1320" y="430" width="130" height="290"/>
+                      <g stroke-width="1.5">
+                        <line x1="1340" y1="460" x2="1340" y2="700"/>
+                        <line x1="1370" y1="460" x2="1370" y2="700"/>
+                        <line x1="1400" y1="460" x2="1400" y2="700"/>
+                        <line x1="1430" y1="460" x2="1430" y2="700"/>
+                        <polyline points="1320,460 1385,440 1450,460"/>
+                      </g>
+                    </g>
+                  </svg>
+                </div>
+                <!-- PLACEHOLDER: foreground ground line + fence silhouette, replace with detailed art -->
+                <div class="room__layer" data-parallax="-0.22">
+                  <svg viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="0" y="820" width="1600" height="80" fill="#04070e"/>
+                    <rect x="0" y="816" width="1600" height="4"  fill="#4ea8ff" opacity="0.3"/>
+                    <g stroke="#1a2940" stroke-width="2">
+                      <line x1="80"  y1="820" x2="80"  y2="780"/>
+                      <line x1="220" y1="820" x2="220" y2="780"/>
+                      <line x1="360" y1="820" x2="360" y2="780"/>
+                    </g>
+                  </svg>
+                </div>
+              </div>
+
+              <div class="room__content">
+                <p class="room__number">02 / 05 — The Field</p>
+                <h3 class="room__heading">Where the <em>work</em> actually happens.</h3>
+                <p class="room__lead">
+                  Critical environments where uptime, airflow, and safety aren't negotiable. Years of hands-on integration and commissioning across these sectors.
+                </p>
+                <ul class="room__cards">
+                  <li class="room__card">
+                    <strong>Hospitals</strong>
+                    <span>Pressure-sensitive zones, life-safety integrations, never-down systems.</span>
+                  </li>
+                  <li class="room__card">
+                    <strong>Laboratories</strong>
+                    <span>Tight tolerances, fume-hood logic, regulated airflow strategies.</span>
+                  </li>
+                  <li class="room__card">
+                    <strong>Universities</strong>
+                    <span>Multi-building campuses, retrofits, training the in-house ops team.</span>
+                  </li>
+                  <li class="room__card">
+                    <strong>Government &amp; Commercial</strong>
+                    <span>Secure facilities, compliance, tenant comfort, operating-cost math.</span>
+                  </li>
+                </ul>
+              </div>
+            </article>
+
+            <!-- ─── ROOM 03 — THE TEAM (Leadership) ─── -->
+            <article class="room room--team" id="room-team" data-room-index="3">
+              <div class="room__diorama" aria-hidden="true">
+                <!-- PLACEHOLDER: wall chart back layer, replace with detailed art -->
+                <div class="room__layer" data-parallax="0.18">
+                  <svg viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="900" y="120" width="640" height="420" fill="none" stroke="#1a2940" stroke-width="2"/>
+                    <g stroke="#4ea8ff" stroke-width="1" opacity="0.4" fill="none">
+                      <polyline points="940,460 1040,420 1140,380 1240,360 1340,310 1440,260 1500,220"/>
+                      <line x1="940" y1="500" x2="1500" y2="500"/>
+                      <line x1="940" y1="160" x2="940"  y2="500"/>
+                    </g>
+                    <g font-family="ui-monospace, monospace" font-size="10" fill="#4ea8ff" opacity="0.5">
+                      <text x="940" y="150">PERF</text>
+                      <text x="1460" y="200">↗</text>
+                    </g>
+                  </svg>
+                </div>
+                <!-- PLACEHOLDER: figure cluster mid layer, replace with detailed art -->
+                <div class="room__layer" data-parallax="-0.08">
+                  <svg viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+                    <g fill="#0a0d13">
+                      <g transform="translate(1080,520)">
+                        <circle cx="0" cy="0" r="22"/>
+                        <rect x="-30" y="22" width="60" height="180" rx="6"/>
+                      </g>
+                      <g transform="translate(1180,540)">
+                        <circle cx="0" cy="0" r="22"/>
+                        <rect x="-30" y="22" width="60" height="180" rx="6"/>
+                      </g>
+                      <g transform="translate(1280,520)">
+                        <circle cx="0" cy="0" r="22"/>
+                        <rect x="-30" y="22" width="60" height="180" rx="6"/>
+                      </g>
+                    </g>
+                  </svg>
+                </div>
+                <!-- PLACEHOLDER: lead figure foreground, replace with detailed art -->
+                <div class="room__layer" data-parallax="-0.22">
+                  <svg viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+                    <g fill="#04060a">
+                      <g transform="translate(960,500)">
+                        <circle cx="0" cy="0" r="26"/>
+                        <rect x="-36" y="26" width="72" height="210" rx="8"/>
+                      </g>
+                    </g>
+                    <g stroke="#4ea8ff" stroke-width="1.5" opacity="0.55" fill="none">
+                      <circle cx="960" cy="500" r="36"/>
+                    </g>
+                  </svg>
+                </div>
+              </div>
+
+              <div class="room__content">
+                <p class="room__number">03 / 05 — The Team</p>
+                <h3 class="room__heading">Engineer first. <em>Leader</em> by reflex.</h3>
+                <p class="room__lead">
+                  Before automation, I was top-performing in sales and management at AT&amp;T and Verizon. That trained me to translate between technical teams, clients, and ops — and to bring people along when the work gets hard.
+                </p>
+                <ol class="room__timeline">
+                  <li>
+                    <strong>AT&amp;T</strong>
+                    Top-performing sales — learned to read people fast and close hard problems.
+                  </li>
+                  <li>
+                    <strong>Verizon</strong>
+                    Top performer → store manager. Hiring, coaching, owning a team's numbers.
+                  </li>
+                  <li>
+                    <strong>Building Automation</strong>
+                    Field tech: airflow systems, VFDs, commissioning, BACnet networks.
+                  </li>
+                  <li>
+                    <strong>Specialist &amp; mentor</strong>
+                    Siemens systems, graphics, PPCL, training the next techs on the job.
+                  </li>
+                </ol>
+              </div>
+            </article>
+
+            <!-- ─── ROOM 04 — WHAT'S NEXT (Vision & Innovation) ─── -->
+            <article class="room room--vision" id="room-vision" data-room-index="4">
+              <div class="room__diorama" aria-hidden="true">
+                <!-- PLACEHOLDER: future skyline back layer, replace with detailed art -->
+                <div class="room__layer" data-parallax="0.18">
+                  <svg viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+                    <g fill="#0a1830" opacity="0.85">
+                      <rect x="100"  y="500" width="80" height="400"/>
+                      <rect x="200"  y="420" width="120" height="480"/>
+                      <rect x="340"  y="480" width="90"  height="420"/>
+                      <rect x="450"  y="380" width="100" height="520"/>
+                      <rect x="1100" y="460" width="110" height="440"/>
+                      <rect x="1230" y="400" width="90"  height="500"/>
+                      <rect x="1340" y="500" width="100" height="400"/>
+                      <rect x="1460" y="440" width="120" height="460"/>
+                    </g>
+                    <g stroke="#4ea8ff" stroke-width="1" opacity="0.5">
+                      <line x1="240" y1="420" x2="240" y2="900" stroke-dasharray="2 4"/>
+                      <line x1="500" y1="380" x2="500" y2="900" stroke-dasharray="2 4"/>
+                      <line x1="1270" y1="400" x2="1270" y2="900" stroke-dasharray="2 4"/>
+                      <line x1="1520" y1="440" x2="1520" y2="900" stroke-dasharray="2 4"/>
+                    </g>
+                  </svg>
+                </div>
+                <!-- PLACEHOLDER: floating data nodes / orbiting elements mid layer, replace with detailed art -->
+                <div class="room__layer" data-parallax="-0.06">
+                  <svg viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+                    <g fill="none" stroke="#4ea8ff" stroke-width="1" opacity="0.45">
+                      <circle cx="1180" cy="340" r="120"/>
+                      <circle cx="1180" cy="340" r="180" stroke-dasharray="6 6"/>
+                      <circle cx="1180" cy="340" r="240" opacity="0.5"/>
+                    </g>
+                    <g fill="#4ea8ff">
+                      <circle cx="1300" cy="340" r="4"/>
+                      <circle cx="1180" cy="220" r="4"/>
+                      <circle cx="1060" cy="380" r="4"/>
+                      <circle cx="1240" cy="460" r="4"/>
+                    </g>
+                  </svg>
+                </div>
+                <!-- PLACEHOLDER: glowing core sphere foreground, replace with detailed art -->
+                <div class="room__layer" data-parallax="-0.24">
+                  <svg viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+                    <defs>
+                      <radialGradient id="visionCore" cx="50%" cy="50%" r="50%">
+                        <stop offset="0%"  stop-color="#7ec0ff" stop-opacity="0.95"/>
+                        <stop offset="60%" stop-color="#4ea8ff" stop-opacity="0.35"/>
+                        <stop offset="100%" stop-color="#4ea8ff" stop-opacity="0"/>
+                      </radialGradient>
+                    </defs>
+                    <circle cx="1180" cy="340" r="60" fill="url(#visionCore)"/>
+                    <circle cx="1180" cy="340" r="14" fill="#dceaff"/>
+                  </svg>
+                </div>
+              </div>
+
+              <div class="room__content">
+                <p class="room__number">04 / 05 — What's Next</p>
+                <h3 class="room__heading">I see <em>systems</em> before they're built.</h3>
+                <p class="room__lead">
+                  Entrepreneurial thinking applied where automation, AI, and infrastructure meet real-world friction. The most interesting work is at the edges where these stack.
+                </p>
+                <ul class="room__cards">
+                  <li class="room__card">
+                    <strong>AI-powered infrastructure</strong>
+                    <span>Buildings that learn their own usage, not just respond to it.</span>
+                  </li>
+                  <li class="room__card">
+                    <strong>Smart traffic systems</strong>
+                    <span>Optimization that treats cities as one networked system instead of disconnected lights.</span>
+                  </li>
+                  <li class="room__card">
+                    <strong>Automation-driven efficiency</strong>
+                    <span>Cutting operational drag with smarter control strategy, not bigger equipment.</span>
+                  </li>
+                  <li class="room__card">
+                    <strong>Smart-home + digital platforms</strong>
+                    <span>Concepts that ship past the demo and survive a real household — or a real business.</span>
+                  </li>
+                </ul>
+              </div>
+            </article>
+
+            <!-- ─── ROOM 05 — THE CURIOSITY (Interests + Goals) ─── -->
+            <article class="room room--curious" id="room-curious" data-room-index="5">
+              <div class="room__diorama" aria-hidden="true">
+                <!-- PLACEHOLDER: scribble wall / sketches back layer, replace with detailed art -->
+                <div class="room__layer" data-parallax="0.18">
+                  <svg viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+                    <g stroke="#1a2940" stroke-width="0.8" opacity="0.4">
+                      <line x1="0" y1="180" x2="1600" y2="180"/>
+                      <line x1="0" y1="280" x2="1600" y2="280"/>
+                      <line x1="0" y1="380" x2="1600" y2="380"/>
+                      <line x1="0" y1="480" x2="1600" y2="480"/>
+                      <line x1="0" y1="580" x2="1600" y2="580"/>
+                      <line x1="0" y1="680" x2="1600" y2="680"/>
+                    </g>
+                    <g stroke="#4ea8ff" stroke-width="1.2" fill="none" opacity="0.4">
+                      <path d="M1080 240 q40 -40 80 0 t80 0"/>
+                      <path d="M1100 360 l60 -30 l40 30 l50 -20"/>
+                      <circle cx="1300" cy="440" r="40"/>
+                      <line x1="1340" y1="440" x2="1400" y2="440"/>
+                    </g>
+                  </svg>
+                </div>
+                <!-- PLACEHOLDER: floating concept papers mid layer, replace with detailed art -->
+                <div class="room__layer" data-parallax="-0.06">
+                  <svg viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+                    <g stroke="#4ea8ff" stroke-width="1.2" fill="#04070e" opacity="0.7">
+                      <g transform="translate(1100,520) rotate(-6)">
+                        <rect x="-60" y="-80" width="120" height="160" rx="3"/>
+                        <line x1="-44" y1="-50" x2="44" y2="-50" stroke-width="1"/>
+                        <line x1="-44" y1="-30" x2="20" y2="-30" stroke-width="1"/>
+                        <line x1="-44" y1="-10" x2="36" y2="-10" stroke-width="1"/>
+                      </g>
+                      <g transform="translate(1260,500) rotate(4)">
+                        <rect x="-60" y="-80" width="120" height="160" rx="3"/>
+                        <line x1="-44" y1="-50" x2="36" y2="-50" stroke-width="1"/>
+                        <line x1="-44" y1="-30" x2="20" y2="-30" stroke-width="1"/>
+                        <line x1="-44" y1="-10" x2="44" y2="-10" stroke-width="1"/>
+                      </g>
+                    </g>
+                  </svg>
+                </div>
+                <!-- PLACEHOLDER: lightbulb glow foreground, replace with detailed art -->
+                <div class="room__layer" data-parallax="-0.22">
+                  <svg viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+                    <defs>
+                      <radialGradient id="bulbGlow" cx="50%" cy="50%" r="50%">
+                        <stop offset="0%"  stop-color="#f4b46d" stop-opacity="0.85"/>
+                        <stop offset="60%" stop-color="#f4b46d" stop-opacity="0.18"/>
+                        <stop offset="100%" stop-color="#f4b46d" stop-opacity="0"/>
+                      </radialGradient>
+                    </defs>
+                    <circle cx="1180" cy="380" r="120" fill="url(#bulbGlow)"/>
+                    <g fill="none" stroke="#f4b46d" stroke-width="1.5" opacity="0.85">
+                      <path d="M1170 320 q-20 30 0 60 h20 q20 -30 0 -60 z"/>
+                      <line x1="1170" y1="386" x2="1190" y2="386"/>
+                      <line x1="1172" y1="394" x2="1188" y2="394"/>
+                      <line x1="1174" y1="402" x2="1186" y2="402"/>
+                    </g>
+                  </svg>
+                </div>
+              </div>
+
+              <div class="room__content">
+                <p class="room__number">05 / 05 — The Curiosity</p>
+                <h3 class="room__heading">Always <em>building</em> something.</h3>
+                <p class="room__lead">
+                  Same instincts — pattern recognition, systems thinking, fast iteration — pointed at different domains. The job pays the bills; the curiosity compounds.
+                </p>
+                <div class="room__columns">
+                  <div class="room__column">
+                    <h4>Curious about</h4>
+                    <ul>
+                      <li>Smart homes</li>
+                      <li>AI infrastructure</li>
+                      <li>Branding &amp; design</li>
+                      <li>Hospitality concepts</li>
+                      <li>Web platforms</li>
+                    </ul>
+                  </div>
+                  <div class="room__column">
+                    <h4>Building toward</h4>
+                    <ul>
+                      <li>A bigger automation role</li>
+                      <li>Side ventures that ship</li>
+                      <li>Mentoring into the trade</li>
+                      <li>BAS knowledge → broader products</li>
+                      <li>A digital identity that lasts</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </article>
+
+          </div><!-- /.gallery__track -->
+
+          <div class="gallery__progress" aria-hidden="true">
+            <span class="gallery__progress-dot is-active" data-room="1"></span>
+            <span class="gallery__progress-dot" data-room="2"></span>
+            <span class="gallery__progress-dot" data-room="3"></span>
+            <span class="gallery__progress-dot" data-room="4"></span>
+            <span class="gallery__progress-dot" data-room="5"></span>
+          </div>
+
+          <div class="gallery__cue" aria-hidden="true">
+            <span>Scroll</span>
+            <span class="gallery__cue-arrow"></span>
+          </div>
+
+        </div><!-- /.gallery__inner -->
+      </section>
+
+      <!-- Subsequent scenes (Skills Constellation, Daylight Contact)
+           will be appended here in following passes. -->
     </main>
   </body>
 </html>

@@ -2,6 +2,7 @@ import './styles/tokens.css';
 import './styles/base.css';
 import './styles/scenes/hero.css';
 import './styles/scenes/dive.css';
+import './styles/scenes/gallery.css';
 
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
@@ -9,6 +10,7 @@ import Lenis from 'lenis';
 
 import { initHero } from './scenes/hero.js';
 import { initDive } from './scenes/dive.js';
+import { initGallery } from './scenes/gallery.js';
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -40,6 +42,7 @@ if (!reducedMotion) {
 // Boot scenes once DOM is parsed (script is type="module", so deferred).
 initHero({ reducedMotion });
 initDive({ reducedMotion });
+initGallery({ reducedMotion });
 
 // Recompute trigger positions after web fonts settle
 window.addEventListener('load', () => ScrollTrigger.refresh());

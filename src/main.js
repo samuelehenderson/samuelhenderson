@@ -3,6 +3,7 @@ import './styles/base.css';
 import './styles/scenes/hero.css';
 import './styles/scenes/dive.css';
 import './styles/scenes/gallery.css';
+import './styles/scenes/constellation.css';
 
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
@@ -11,6 +12,7 @@ import Lenis from 'lenis';
 import { initHero } from './scenes/hero.js';
 import { initDive } from './scenes/dive.js';
 import { initGallery } from './scenes/gallery.js';
+import { initConstellation } from './scenes/constellation.js';
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -44,6 +46,7 @@ if (!reducedMotion) {
 initHero({ reducedMotion });
 initDive({ reducedMotion });
 initGallery({ reducedMotion, lenis });
+initConstellation({ reducedMotion });
 
 // Recompute trigger positions after web fonts settle
 window.addEventListener('load', () => ScrollTrigger.refresh());

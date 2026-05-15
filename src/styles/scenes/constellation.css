@@ -1,0 +1,210 @@
+/* ──────────────────────────────────────────────────────────────
+   Scene 4 ── Skills Constellation
+   Vertical scroll, sticky stage. Skills arranged as stars in a
+   starfield, three tiers of depth. CSS handles the twinkle;
+   GSAP drives the per-tier parallax translation on scroll.
+   ────────────────────────────────────────────────────────────── */
+
+.scene--constellation {
+  position: relative;
+  height: 220vh;
+  background:
+    radial-gradient(ellipse 80% 60% at 50% 30%, rgba(78, 168, 255, 0.06), transparent 60%),
+    #02050a;
+}
+
+.constellation__inner {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ── Heading area, top-left ── */
+.constellation__content {
+  position: absolute;
+  top: var(--header-h);
+  left: 0;
+  right: 0;
+  padding: var(--space-7) var(--gutter) 0;
+  max-width: var(--container-max);
+  margin: 0 auto;
+  z-index: 5;
+  pointer-events: none;
+}
+.constellation__content > * { pointer-events: auto; }
+
+.constellation__number {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-4);
+  font-family: var(--font-mono);
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--color-accent);
+}
+.constellation__number::before {
+  content: "";
+  width: 28px;
+  height: 1px;
+  background: var(--color-accent);
+}
+
+.constellation__heading {
+  font-family: var(--font-display);
+  font-size: var(--fs-h2);
+  font-weight: 700;
+  line-height: var(--lh-tight);
+  letter-spacing: var(--tracking-tight);
+  color: var(--color-text);
+  margin: 0 0 var(--space-4);
+  max-width: 14ch;
+}
+.constellation__heading em {
+  font-style: normal;
+  background: linear-gradient(120deg, var(--color-accent), var(--color-accent-soft));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.constellation__lead {
+  max-width: 42ch;
+  color: var(--color-text-muted);
+  font-size: var(--fs-body);
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* ── Connecting wires between tier-1 stars ── */
+.constellation__lines {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  will-change: transform;
+  z-index: 2;
+  overflow: visible;
+}
+.constellation__lines line {
+  stroke: var(--color-accent);
+  stroke-width: 1;
+  stroke-dasharray: 4 7;
+  opacity: 0.32;
+}
+
+/* ── Starfield ── */
+.constellation__field {
+  position: absolute;
+  inset: 0;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  z-index: 3;
+}
+
+.star {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  text-align: center;
+  will-change: transform, opacity;
+}
+
+.star__dot {
+  position: relative;
+  display: block;
+  border-radius: 50%;
+  background: var(--color-accent);
+  box-shadow: 0 0 16px var(--color-accent-glow);
+  animation: starTwinkle 3.4s var(--ease-in-out) calc(var(--delay, 0s)) infinite;
+}
+.star__dot::after {
+  content: "";
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(126, 192, 255, 0.35), transparent 70%);
+}
+
+.star__label {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-shadow: 0 0 12px rgba(2, 5, 10, 0.9);
+  max-width: 36vw;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  line-height: 1.25;
+}
+
+/* Tier sizing / brightness */
+.star--t1 .star__dot { width: 14px; height: 14px; box-shadow: 0 0 28px var(--color-accent-glow); }
+.star--t1 .star__label { color: var(--color-text); font-size: 0.85rem; }
+
+.star--t2 .star__dot { width: 9px; height: 9px; opacity: 0.85; box-shadow: 0 0 18px var(--color-accent-glow); }
+.star--t2 .star__label { color: var(--color-text-muted); }
+
+.star--t3 .star__dot {
+  width: 5px; height: 5px; opacity: 0.55;
+  box-shadow: 0 0 10px var(--color-accent-glow);
+  animation-duration: 5s;
+}
+.star--t3 .star__label { color: var(--color-text-dim); font-size: 0.7rem; }
+
+@keyframes starTwinkle {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.45; transform: scale(0.92); }
+}
+
+/* ── Closing line, bottom of scroll ── */
+.constellation__closing {
+  position: absolute;
+  bottom: 14vh;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: clamp(0.8rem, 0.65rem + 0.5vw, 1.05rem);
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--color-text);
+  opacity: 0;
+  white-space: nowrap;
+  z-index: 4;
+}
+.constellation__closing::before,
+.constellation__closing::after {
+  content: "";
+  display: inline-block;
+  width: 28px;
+  height: 1px;
+  background: var(--color-accent);
+  vertical-align: middle;
+  margin: 0 var(--space-4);
+}
+
+/* ── Mobile ── */
+@media (max-width: 720px) {
+  .scene--constellation { height: 200vh; }
+  .star__label { font-size: 0.7rem; max-width: 28vw; }
+  .star--t1 .star__label { font-size: 0.75rem; }
+  .star--t3 .star__label { font-size: 0.65rem; }
+  .constellation__heading { max-width: 18ch; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .star, .constellation__lines { transform: none !important; }
+  .star__dot { animation: none !important; }
+  .constellation__closing { opacity: 1; }
+}

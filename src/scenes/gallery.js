@@ -12,7 +12,7 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger';
  * Under prefers-reduced-motion or in browsers without GSAP wiring,
  * the page falls back to the vertical stack — fully readable.
  */
-export function initGallery({ reducedMotion }) {
+export function initGallery({ reducedMotion, lenis }) {
   const scene = document.querySelector('[data-scene="gallery"]');
   if (!scene || reducedMotion) return;
 
@@ -29,6 +29,10 @@ export function initGallery({ reducedMotion }) {
     const getDistance = () =>
       track.scrollWidth - window.innerWidth;
 
+    // Snap to each room center — prevents stopping mid-pan between rooms.
+    // 5 rooms = 4 equal segments between snap points = 1/4.
+    const snapStep = 1 / (rooms.length - 1);
+
     // Master horizontal tween — drives everything else
     const horizontalTween = gsap.to(track, {
       x: () => -getDistance(),
@@ -41,6 +45,18 @@ export function initGallery({ reducedMotion }) {
         end: () => `+=${getDistance()}`,
         invalidateOnRefresh: true,
         anticipatePin: 1,
+        snap: {
+          snapTo: snapStep,
+          duration: { min: 0.25, max: 0.55 },
+          delay: 0.08,
+          ease: 'power2.inOut',
+          directional: false,
+          // Pause Lenis during the snap tween so the smooth-scroller
+          // doesn't fight ScrollTrigger's programmatic scrollTo.
+          onStart:     () => { if (lenis) lenis.stop(); },
+          onComplete:  () => { if (lenis) lenis.start(); },
+          onInterrupt: () => { if (lenis) lenis.start(); },
+        },
       },
     });
 

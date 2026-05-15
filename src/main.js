@@ -19,8 +19,9 @@ const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matc
 // Smooth scroll — disabled under reduced-motion so we don't override
 // the user's preference. ScrollTrigger reads scroll position the same
 // either way; native scroll just feeds it directly.
+let lenis = null;
 if (!reducedMotion) {
-  const lenis = new Lenis({
+  lenis = new Lenis({
     duration: 1.1,
     easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
     smoothWheel: true,
@@ -42,7 +43,7 @@ if (!reducedMotion) {
 // Boot scenes once DOM is parsed (script is type="module", so deferred).
 initHero({ reducedMotion });
 initDive({ reducedMotion });
-initGallery({ reducedMotion });
+initGallery({ reducedMotion, lenis });
 
 // Recompute trigger positions after web fonts settle
 window.addEventListener('load', () => ScrollTrigger.refresh());

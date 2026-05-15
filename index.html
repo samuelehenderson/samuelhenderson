@@ -311,8 +311,160 @@
         </div><!-- /.hero__inner -->
       </section>
 
-      <!-- Subsequent scenes (Dive, Project Rooms, Skills Constellation,
-           Daylight Contact) will be appended here in following passes. -->
+      <!-- ============================================================
+           SCENE 2 — THE DIVE
+           Vertical scroll, sticky stage. The camera pushes through
+           the monitor: a centered "screen" element scales from ~30%
+           to full viewport while code rain runs inside; two HUD
+           schematics flash through; the screen dissolves into a
+           perspective grid horizon ready for the project rooms.
+           ============================================================ -->
+      <section
+        class="scene scene--dive"
+        data-scene="dive"
+        aria-labelledby="dive-heading"
+      >
+        <h2 id="dive-heading" class="sr-only">Into the systems</h2>
+
+        <div class="dive__inner">
+          <div class="dive__residue" aria-hidden="true"></div>
+
+          <div class="dive__screen" aria-hidden="true">
+            <canvas class="dive__rain"></canvas>
+
+            <div class="dive__hud">
+              <!-- PLACEHOLDER: HUD schematic 1 — building floor plan with HVAC zones, replace with detailed art -->
+              <svg class="dive__hud-svg dive__hud-svg--plan" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+                <g stroke="#7ec0ff" stroke-width="1.5" fill="none" opacity="0.75">
+                  <rect x="300" y="200" width="1000" height="500"/>
+                  <line x1="600" y1="200" x2="600" y2="500"/>
+                  <line x1="300" y1="500" x2="900" y2="500"/>
+                  <line x1="900" y1="200" x2="900" y2="700"/>
+                  <line x1="900" y1="450" x2="1300" y2="450"/>
+                  <line x1="1100" y1="450" x2="1100" y2="700"/>
+                </g>
+                <g fill="#4ea8ff">
+                  <circle cx="450" cy="350" r="6"/>
+                  <circle cx="750" cy="350" r="6"/>
+                  <circle cx="450" cy="600" r="6"/>
+                  <circle cx="750" cy="600" r="6"/>
+                  <circle cx="1100" cy="325" r="6"/>
+                  <circle cx="1200" cy="575" r="6"/>
+                </g>
+                <g stroke="#4ea8ff" stroke-width="1" stroke-dasharray="4 4" opacity="0.55" fill="none">
+                  <line x1="450" y1="350" x2="750" y2="350"/>
+                  <line x1="750" y1="350" x2="1100" y2="325"/>
+                  <line x1="450" y1="600" x2="750" y2="600"/>
+                  <line x1="750" y1="600" x2="1200" y2="575"/>
+                </g>
+                <g font-family="ui-monospace, monospace" font-size="11" fill="#7ec0ff" opacity="0.7">
+                  <text x="400" y="338">VAV-01</text>
+                  <text x="700" y="338">VAV-02</text>
+                  <text x="400" y="588">AHU-01</text>
+                  <text x="700" y="588">VAV-03</text>
+                  <text x="1050" y="313">CHW</text>
+                  <text x="1150" y="563">FCU</text>
+                </g>
+              </svg>
+
+              <!-- PLACEHOLDER: HUD schematic 2 — controller / network topology, replace with detailed art -->
+              <svg class="dive__hud-svg dive__hud-svg--net" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+                <g fill="none" stroke="#4ea8ff" opacity="0.75">
+                  <circle cx="800" cy="450" r="42" stroke-width="2"/>
+                  <line x1="800" y1="408" x2="500" y2="210" stroke-width="1.5"/>
+                  <line x1="800" y1="408" x2="1100" y2="210" stroke-width="1.5"/>
+                  <line x1="758" y1="450" x2="410" y2="450" stroke-width="1.5"/>
+                  <line x1="842" y1="450" x2="1190" y2="450" stroke-width="1.5"/>
+                  <line x1="800" y1="492" x2="500" y2="690" stroke-width="1.5"/>
+                  <line x1="800" y1="492" x2="1100" y2="690" stroke-width="1.5"/>
+                  <circle cx="500" cy="210" r="22" stroke-width="1.5"/>
+                  <circle cx="1100" cy="210" r="22" stroke-width="1.5"/>
+                  <circle cx="400" cy="450" r="22" stroke-width="1.5"/>
+                  <circle cx="1200" cy="450" r="22" stroke-width="1.5"/>
+                  <circle cx="500" cy="690" r="22" stroke-width="1.5"/>
+                  <circle cx="1100" cy="690" r="22" stroke-width="1.5"/>
+                </g>
+                <g font-family="ui-monospace, monospace" font-size="11" fill="#7ec0ff" opacity="0.75" text-anchor="middle">
+                  <text x="800" y="455">DESIGO</text>
+                  <text x="500" y="178">PXC-100</text>
+                  <text x="1100" y="178">PXC-200</text>
+                  <text x="400" y="498">PXC-300</text>
+                  <text x="1200" y="498">PXC-400</text>
+                  <text x="500" y="722">PXC-500</text>
+                  <text x="1100" y="722">PXC-600</text>
+                </g>
+                <g fill="#7ec0ff">
+                  <circle cx="650" cy="310" r="3"/>
+                  <circle cx="950" cy="310" r="3"/>
+                  <circle cx="600" cy="450" r="3"/>
+                  <circle cx="1000" cy="450" r="3"/>
+                </g>
+              </svg>
+            </div>
+
+            <!-- PLACEHOLDER: digital landscape — perspective grid horizon, replace with detailed art -->
+            <div class="dive__grid">
+              <svg viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                  <linearGradient id="horizonGrad" x1="0" x2="0" y1="0" y2="1">
+                    <stop offset="0%"  stop-color="#02050a"/>
+                    <stop offset="48%" stop-color="#08111f"/>
+                    <stop offset="50%" stop-color="#4ea8ff" stop-opacity="0.85"/>
+                    <stop offset="52%" stop-color="#08111f"/>
+                    <stop offset="100%" stop-color="#02050a"/>
+                  </linearGradient>
+                  <radialGradient id="horizonGlow" cx="50%" cy="50%" r="40%">
+                    <stop offset="0%"  stop-color="#4ea8ff" stop-opacity="0.45"/>
+                    <stop offset="100%" stop-color="#4ea8ff" stop-opacity="0"/>
+                  </radialGradient>
+                </defs>
+                <rect width="1600" height="900" fill="url(#horizonGrad)"/>
+                <ellipse cx="800" cy="450" rx="640" ry="130" fill="url(#horizonGlow)"/>
+                <g stroke="#4ea8ff" stroke-width="1" opacity="0.55">
+                  <line x1="800" y1="450" x2="-300" y2="900"/>
+                  <line x1="800" y1="450" x2="-80"  y2="900"/>
+                  <line x1="800" y1="450" x2="120"  y2="900"/>
+                  <line x1="800" y1="450" x2="320"  y2="900"/>
+                  <line x1="800" y1="450" x2="520"  y2="900"/>
+                  <line x1="800" y1="450" x2="700"  y2="900"/>
+                  <line x1="800" y1="450" x2="900"  y2="900"/>
+                  <line x1="800" y1="450" x2="1080" y2="900"/>
+                  <line x1="800" y1="450" x2="1280" y2="900"/>
+                  <line x1="800" y1="450" x2="1480" y2="900"/>
+                  <line x1="800" y1="450" x2="1680" y2="900"/>
+                  <line x1="800" y1="450" x2="1900" y2="900"/>
+                </g>
+                <g stroke="#4ea8ff" stroke-width="1" opacity="0.42">
+                  <line x1="0" y1="465" x2="1600" y2="465"/>
+                  <line x1="0" y1="485" x2="1600" y2="485"/>
+                  <line x1="0" y1="510" x2="1600" y2="510"/>
+                  <line x1="0" y1="545" x2="1600" y2="545"/>
+                  <line x1="0" y1="595" x2="1600" y2="595"/>
+                  <line x1="0" y1="665" x2="1600" y2="665"/>
+                  <line x1="0" y1="765" x2="1600" y2="765"/>
+                </g>
+                <g fill="#7ec0ff" opacity="0.65">
+                  <circle cx="200"  cy="120" r="1.2"/>
+                  <circle cx="500"  cy="80"  r="1"/>
+                  <circle cx="900"  cy="180" r="1.4"/>
+                  <circle cx="1300" cy="100" r="1"/>
+                  <circle cx="1500" cy="220" r="1.2"/>
+                  <circle cx="350"  cy="240" r="0.9"/>
+                  <circle cx="1100" cy="280" r="1"/>
+                </g>
+              </svg>
+            </div>
+          </div><!-- /.dive__screen -->
+
+          <div class="dive__content">
+            <p class="dive__caption dive__caption--mid" aria-hidden="true">Into the systems</p>
+            <p class="dive__caption dive__caption--end" aria-hidden="true">Selected work</p>
+          </div>
+        </div><!-- /.dive__inner -->
+      </section>
+
+      <!-- Subsequent scenes (Project Rooms horizontal pivot, Skills
+           Constellation, Daylight Contact) will be appended here. -->
     </main>
   </body>
 </html>

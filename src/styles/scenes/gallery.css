@@ -1,0 +1,370 @@
+/* ──────────────────────────────────────────────────────────────
+   Scene 3 ── Horizontal Gallery (Project Rooms)
+   Pinned section. Vertical scroll is converted to horizontal
+   panning across 5 themed "rooms". Each room is its own diorama
+   with parallax sublayers driven by ScrollTrigger.containerAnimation.
+   ────────────────────────────────────────────────────────────── */
+
+.scene--gallery {
+  position: relative;
+  background: #02050a;
+  /* The grid horizon from The Dive continues here for continuity */
+  overflow: hidden;
+}
+
+.gallery__inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+/* Persistent backdrop — sits behind all rooms so the
+   "digital landscape" feel continues across the pan. */
+.gallery__bg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.7;
+}
+.gallery__bg svg { width: 100%; height: 100%; display: block; }
+
+/* Track ── defaults to vertical stack (progressive enhancement,
+   reduced-motion friendly). JS adds .gallery--horizontal on
+   capable devices to switch to a row layout for the pin. */
+.gallery__track {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  z-index: 1;
+}
+
+.room {
+  position: relative;
+  width: 100%;
+  min-height: 100vh;
+  overflow: hidden;
+  padding: var(--space-9) 0;
+  display: grid;
+  align-content: center;
+}
+
+.room__diorama {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.room__layer {
+  position: absolute;
+  inset: 0;
+  will-change: transform;
+}
+.room__layer svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.room__content {
+  position: relative;
+  z-index: 2;
+  max-width: 60ch;
+  margin: 0 auto;
+  padding: 0 var(--gutter);
+}
+
+.room__number {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-5);
+  font-family: var(--font-mono);
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--color-accent);
+}
+.room__number::before {
+  content: "";
+  width: 28px;
+  height: 1px;
+  background: var(--color-accent);
+}
+
+.room__heading {
+  font-family: var(--font-display);
+  font-size: var(--fs-h2);
+  font-weight: 700;
+  line-height: var(--lh-tight);
+  letter-spacing: var(--tracking-tight);
+  color: var(--color-text);
+  margin: 0 0 var(--space-5);
+  max-width: 18ch;
+}
+.room__heading em {
+  font-style: normal;
+  background: linear-gradient(120deg, var(--color-accent), var(--color-accent-soft));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.room__lead {
+  font-size: var(--fs-body);
+  line-height: 1.65;
+  color: var(--color-text-muted);
+  margin: 0 0 var(--space-6);
+  max-width: 48ch;
+}
+
+/* ── Content patterns ── */
+.room__chips {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: 0;
+  margin: 0;
+}
+.room__chips li {
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-pill);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  font-size: 0.85rem;
+  color: var(--color-text);
+  letter-spacing: 0.02em;
+}
+
+.room__cards {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-3);
+}
+.room__card {
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border-radius: var(--radius-md);
+}
+.room__card strong {
+  display: block;
+  color: var(--color-text);
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: var(--space-1);
+  letter-spacing: -0.01em;
+}
+.room__card span {
+  color: var(--color-text-muted);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.room__timeline {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: var(--space-4);
+}
+.room__timeline li {
+  position: relative;
+  padding-left: var(--space-6);
+  color: var(--color-text-muted);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+.room__timeline li::before {
+  content: "";
+  position: absolute;
+  left: 6px;
+  top: 0.5em;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  box-shadow: 0 0 0 4px rgba(78, 168, 255, 0.15);
+}
+.room__timeline li::after {
+  content: "";
+  position: absolute;
+  left: 10px;
+  top: 1.7em;
+  bottom: -1rem;
+  width: 1px;
+  background: linear-gradient(to bottom, rgba(78, 168, 255, 0.4), transparent);
+}
+.room__timeline li:last-child::after { display: none; }
+.room__timeline strong {
+  color: var(--color-text);
+  display: block;
+  font-weight: 600;
+  margin-bottom: var(--space-1);
+}
+
+.room__columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-6);
+}
+.room__column h4 {
+  margin: 0 0 var(--space-3);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--color-accent);
+}
+.room__column ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+.room__column li {
+  color: var(--color-text);
+  font-size: 0.95rem;
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--glass-border);
+}
+
+@media (max-width: 520px) {
+  .room__columns { grid-template-columns: 1fr; }
+}
+
+/* ── Progress + scroll cue (only shown in horizontal mode) ── */
+.gallery__progress,
+.gallery__cue {
+  display: none;
+}
+
+/* ──────────────────────────────────────────────────────────────
+   HORIZONTAL MODE (added by JS on capable devices).
+   Without this class, the gallery is a vertical stack — safe
+   default for reduced-motion and progressive enhancement.
+   ────────────────────────────────────────────────────────────── */
+.gallery--horizontal {
+  height: 100vh;
+}
+
+.gallery--horizontal .gallery__track {
+  flex-direction: row;
+  width: max-content;
+  height: 100vh;
+}
+
+.gallery--horizontal .room {
+  flex: 0 0 100vw;
+  width: 100vw;
+  height: 100vh;
+  min-height: 0;
+  padding: 0;
+  display: block;
+}
+
+.gallery--horizontal .room__content {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: var(--header-h) var(--gutter) var(--space-7);
+  margin: 0;
+  max-width: min(60ch, 92vw);
+  margin-left: clamp(var(--gutter), 8vw, 8vw);
+}
+
+.gallery--horizontal .gallery__progress {
+  display: flex;
+  position: absolute;
+  bottom: var(--space-6);
+  left: 50%;
+  transform: translateX(-50%);
+  gap: var(--space-3);
+  z-index: 10;
+  pointer-events: none;
+}
+.gallery__progress-dot {
+  width: 24px;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 2px;
+  transition: background var(--dur-base) var(--ease-out),
+              width var(--dur-base) var(--ease-out);
+}
+.gallery__progress-dot.is-active {
+  background: var(--color-accent);
+  width: 42px;
+}
+
+.gallery--horizontal .gallery__cue {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  position: absolute;
+  top: 50%;
+  right: var(--space-6);
+  transform: translateY(-50%);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--color-text-dim);
+  z-index: 10;
+  pointer-events: none;
+}
+.gallery__cue-arrow {
+  display: inline-block;
+  width: 32px;
+  height: 1px;
+  background: linear-gradient(to right, transparent, var(--color-accent));
+  position: relative;
+}
+.gallery__cue-arrow::after {
+  content: "";
+  position: absolute;
+  right: 0; top: -3px;
+  width: 7px; height: 7px;
+  border-top: 1px solid var(--color-accent);
+  border-right: 1px solid var(--color-accent);
+  transform: rotate(45deg);
+}
+
+/* Narrow phones — scale type down so content fits each 100vw room */
+@media (max-width: 520px) {
+  .gallery--horizontal .room__content {
+    margin-left: var(--gutter);
+    padding: calc(var(--header-h) + var(--space-3)) var(--gutter) var(--space-8);
+  }
+  .gallery--horizontal .room__heading { font-size: clamp(1.6rem, 5vw + 1rem, 2.2rem); }
+  .gallery--horizontal .gallery__cue { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Force vertical stack regardless of JS — match the safe default */
+  .gallery--horizontal { height: auto; }
+  .gallery--horizontal .gallery__track { flex-direction: column; width: 100%; height: auto; }
+  .gallery--horizontal .room {
+    flex: 0 0 auto; width: 100%; height: auto; min-height: 100vh;
+    padding: var(--space-9) 0; display: grid;
+  }
+  .gallery--horizontal .room__content {
+    position: relative; inset: auto; max-width: 60ch;
+    margin: 0 auto; padding: 0 var(--gutter); display: block;
+  }
+  .gallery--horizontal .gallery__progress,
+  .gallery--horizontal .gallery__cue { display: none; }
+  .room__layer { transform: none !important; }
+}

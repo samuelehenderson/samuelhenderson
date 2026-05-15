@@ -1,0 +1,137 @@
+/* ──────────────────────────────────────────────────────────────
+   Scene 2 ── The Dive
+   Transition scene. A monitor-sized rectangle at center scales
+   up to fill the viewport while code rain runs inside; two
+   schematic HUD overlays flash; the screen dissolves to a
+   perspective grid horizon that hands off to the next scene.
+   ────────────────────────────────────────────────────────────── */
+
+.scene--dive {
+  height: 250vh;
+  background: #04060a;
+  position: relative;
+}
+
+.dive__inner {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow: hidden;
+  background: radial-gradient(ellipse 80% 60% at 50% 50%, #06090f 0%, #02040a 70%);
+}
+
+/* "Room residue" — soft vignette + a hint of the workshop's warm lamp
+   at bottom-left. Fades out as the camera pushes through the screen. */
+.dive__residue {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 18% 92%, rgba(244, 180, 109, 0.10), transparent 28%),
+    radial-gradient(ellipse 70% 55% at 50% 50%, transparent 30%, rgba(0,0,0,0.65) 100%);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.dive__screen {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 100vw;
+  height: 100vh;
+  transform: translate(-50%, -50%) scale(0.32);
+  transform-origin: center;
+  background: linear-gradient(180deg, #0c1a2e 0%, #04101e 100%);
+  overflow: hidden;
+  border-radius: 6px;
+  box-shadow:
+    0 0 100px 10px rgba(78, 168, 255, 0.30),
+    0 0 0 1px rgba(78, 168, 255, 0.20) inset;
+  will-change: transform, border-radius;
+  z-index: 2;
+}
+
+.dive__rain {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  opacity: 0; /* GSAP fades this in/out alongside intensity */
+}
+
+.dive__hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.dive__hud-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  mix-blend-mode: screen;
+}
+
+.dive__grid {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transform: scale(1.08);
+  transform-origin: center 50%;
+  will-change: opacity, transform;
+}
+.dive__grid svg { width: 100%; height: 100%; display: block; }
+
+/* Captions — fixed in viewport space, layered above the screen */
+.dive__content {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.dive__caption {
+  position: absolute;
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: clamp(0.8rem, 0.65rem + 0.6vw, 1.05rem);
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--color-text);
+  opacity: 0;
+  white-space: nowrap;
+}
+.dive__caption::before,
+.dive__caption::after {
+  content: "";
+  display: inline-block;
+  width: 28px;
+  height: 1px;
+  background: var(--color-accent);
+  vertical-align: middle;
+  margin: 0 var(--space-4);
+}
+
+/* Mobile — fewer scroll vh to keep the transition snappy */
+@media (max-width: 720px) {
+  .scene--dive { height: 220vh; }
+  .dive__caption { letter-spacing: 0.22em; }
+}
+
+/* Reduced-motion fallback: no scale-up, no rain. Show the end state
+   as a still image and keep the transition narratively present. */
+@media (prefers-reduced-motion: reduce) {
+  .dive__residue { display: none; }
+  .dive__screen {
+    transform: translate(-50%, -50%) scale(1);
+    border-radius: 0;
+  }
+  .dive__rain { display: none; }
+  .dive__grid { opacity: 1; transform: none; }
+  .dive__caption { opacity: 1; position: static; }
+  .dive__content { gap: var(--space-3); }
+}

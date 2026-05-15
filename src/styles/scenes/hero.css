@@ -1,0 +1,181 @@
+/* ──────────────────────────────────────────────────────────────
+   Scene 1 ── Hero / The Workshop
+   Vertical scroll. Sticky stage holds parallax layers; content
+   fades over the scene. The section is 200vh tall so the
+   "camera push" plays out over real scroll distance.
+   ────────────────────────────────────────────────────────────── */
+
+.scene--hero {
+  height: 200vh;
+  background: linear-gradient(180deg, #05060a 0%, #0a0d14 100%);
+}
+
+.hero__inner {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.hero__stage {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* Layers extend past the visible stage so parallax translation
+   never reveals a hard edge. -30vh top/bottom = 160vh tall. */
+.layer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -30vh;
+  bottom: -30vh;
+  will-change: transform;
+}
+
+.layer-inner {
+  position: absolute;
+  inset: 0;
+  transform: translate3d(var(--mx, 0px), var(--my, 0px), 0);
+  will-change: transform;
+}
+
+.layer svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Ambient glow from the monitor and lamp washing the room */
+.scene--hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 50% 58%, rgba(78, 168, 255, 0.18), transparent 45%),
+    radial-gradient(circle at 18% 78%, rgba(244, 180, 109, 0.10), transparent 35%);
+  pointer-events: none;
+  mix-blend-mode: screen;
+  z-index: 1;
+}
+
+/* ── Content overlay ── */
+.hero__content {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  padding: var(--header-h) var(--gutter) 0;
+  max-width: var(--container-max);
+  margin: 0 auto;
+  z-index: 2;
+  pointer-events: none;
+}
+.hero__content > * { pointer-events: auto; }
+
+.hero__eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--color-accent);
+  margin: 0 0 var(--space-5);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.hero__eyebrow::before {
+  content: "";
+  display: inline-block;
+  width: 32px;
+  height: 1px;
+  background: var(--color-accent);
+}
+
+.hero__title {
+  font-family: var(--font-display);
+  font-size: var(--fs-h1);
+  font-weight: 700;
+  line-height: var(--lh-tight);
+  letter-spacing: var(--tracking-tight);
+  color: var(--color-text);
+  margin: 0;
+  max-width: 22ch;
+}
+.hero__title span {
+  display: block;
+}
+.hero__title em {
+  font-style: normal;
+  background: linear-gradient(120deg, var(--color-accent), var(--color-accent-soft));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.hero__subtitle {
+  margin: var(--space-6) 0 0;
+  font-size: var(--fs-lead);
+  color: var(--color-text-muted);
+  max-width: 52ch;
+  line-height: 1.5;
+}
+
+/* ── Scroll cue ── */
+.hero__cue {
+  position: absolute;
+  bottom: var(--space-7);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--color-text-dim);
+  z-index: 3;
+}
+.hero__cue-line {
+  width: 1px;
+  height: 56px;
+  background: linear-gradient(to bottom, var(--color-text-dim), transparent);
+  position: relative;
+  overflow: hidden;
+}
+.hero__cue-line::after {
+  content: "";
+  position: absolute;
+  top: -50%;
+  left: 0;
+  width: 100%;
+  height: 50%;
+  background: linear-gradient(to bottom, transparent, var(--color-accent));
+  animation: cueDrop 1.8s var(--ease-in-out) infinite;
+}
+@keyframes cueDrop {
+  0%   { transform: translateY(0); opacity: 0; }
+  20%  { opacity: 1; }
+  100% { transform: translateY(200%); opacity: 0; }
+}
+
+/* ──────────────────────────────────────────────────────────────
+   Mobile ── reduce layer count, drop mouse parallax
+   (mouse parallax is also gated in JS by pointer:coarse).
+   ────────────────────────────────────────────────────────────── */
+@media (max-width: 720px) {
+  [data-mobile-hide] { display: none !important; }
+
+  .hero__content { padding-top: calc(var(--header-h) + var(--space-5)); }
+  .hero__cue { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero__cue-line::after { animation: none; }
+  .layer, .layer-inner { transform: none !important; }
+}

@@ -3,6 +3,7 @@ import './styles/base.css';
 import './styles/scenes/hero.css';
 import './styles/scenes/dive.css';
 import './styles/scenes/gallery.css';
+import './styles/scenes/selected.css';
 import './styles/scenes/constellation.css';
 import './styles/scenes/contact.css';
 

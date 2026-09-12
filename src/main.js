@@ -4,6 +4,7 @@ import './styles/scenes/hero.css';
 import './styles/scenes/dive.css';
 import './styles/scenes/gallery.css';
 import './styles/scenes/constellation.css';
+import './styles/scenes/contact.css';
 
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
@@ -47,6 +48,28 @@ initHero({ reducedMotion });
 initDive({ reducedMotion });
 initGallery({ reducedMotion, lenis });
 initConstellation({ reducedMotion });
+
+// Route all in-page anchor clicks through Lenis so nav + skip link
+// smooth-scroll to their targets instead of jumping. Falls back to
+// native scrollIntoView when Lenis isn't active (reduced-motion).
+document.addEventListener('click', (e) => {
+  const link = e.target.closest('a[href^="#"]');
+  if (!link) return;
+  const href = link.getAttribute('href');
+  if (!href || href === '#' || href.length < 2) return;
+  const target = document.querySelector(href);
+  if (!target) return;
+  e.preventDefault();
+  if (lenis) {
+    lenis.scrollTo(target, {
+      duration: 1.6,
+      offset: -20,
+      easing: (t) => 1 - Math.pow(1 - t, 3),
+    });
+  } else {
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+});
 
 // Recompute trigger positions after web fonts settle
 window.addEventListener('load', () => ScrollTrigger.refresh());

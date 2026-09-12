@@ -1,6 +1,6 @@
-/* ──────────────────────────────────────────────────────────────
+/* ─────────────────────────────────────────────────────────────
    Base ── reset, typography, accessibility, layout primitives.
-   ────────────────────────────────────────────────────────────── */
+   ───────────────────────────────────────────────────────────── */
 
 *,
 *::before,
@@ -85,7 +85,10 @@ a:hover { color: var(--color-accent-soft); }
   letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
   color: var(--color-text-muted);
+  text-decoration: none;
+  transition: color var(--dur-fast) var(--ease-out);
 }
+.site-header__mark:hover { color: var(--color-text); }
 .site-header__mark strong { color: var(--color-text); font-weight: 600; }
 
 .site-header__nav {
@@ -106,10 +109,10 @@ a:hover { color: var(--color-accent-soft); }
 /* Scene scaffolding shared across the camera journey */
 .scene { position: relative; }
 
-/* ──────────────────────────────────────────────────────────────
+/* ─────────────────────────────────────────────────────────────
    Reduced-motion ── lock parallax, keep content readable.
    Individual scenes also branch in JS.
-   ────────────────────────────────────────────────────────────── */
+   ───────────────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   *, *::before, *::after {

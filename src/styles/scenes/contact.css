@@ -76,11 +76,26 @@
 .contact__wrap > * { pointer-events: auto; }
 
 .contact__content {
+  position: relative;
+  isolation: isolate;
   display: flex;
   flex-direction: column;
   color: #2d1e0c;
-  text-shadow: 0 1px 2px rgba(255, 235, 190, 0.6);
+  text-shadow: 0 1px 2px rgba(255, 235, 190, 0.5);
 }
+/* Warm sun-spot wash behind the copy so text always reads regardless
+   of what parallax silhouette is landing behind it. */
+.contact__content::before {
+  content: "";
+  position: absolute;
+  inset: -2.5rem -4rem -2.5rem -3rem;
+  background:
+    radial-gradient(ellipse 85% 90% at 38% 50%, rgba(255, 244, 200, 0.62), transparent 72%);
+  border-radius: 24px;
+  z-index: -1;
+  pointer-events: none;
+}
+.contact__content > * { position: relative; }
 
 .contact__number {
   display: inline-flex;
@@ -370,6 +385,16 @@
     height: auto;
     padding: calc(var(--header-h) + var(--space-5)) var(--gutter) var(--space-9);
     gap: var(--space-7);
+  }
+  /* Fade the parallax stage down on mobile so it acts as a soft
+     backdrop, not something that competes with the text. */
+  .contact__stage { opacity: 0.55; }
+  /* Stronger sun-spot behind content on mobile — text sits over a
+     stacked stage in the narrow layout. */
+  .contact__content::before {
+    inset: -1.5rem -1.5rem -1.5rem -1.5rem;
+    background:
+      radial-gradient(ellipse 110% 100% at 50% 50%, rgba(255, 244, 200, 0.85), rgba(255, 244, 200, 0.35) 65%, transparent 90%);
   }
   .contact__note {
     transform: rotate(-1deg);

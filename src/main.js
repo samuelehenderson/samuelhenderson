@@ -15,6 +15,7 @@ import { initHero } from './scenes/hero.js';
 import { initDive } from './scenes/dive.js';
 import { initGallery } from './scenes/gallery.js';
 import { initConstellation } from './scenes/constellation.js';
+import { initDaylight } from './scenes/daylight.js';
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -49,6 +50,7 @@ initHero({ reducedMotion });
 initDive({ reducedMotion });
 initGallery({ reducedMotion, lenis });
 initConstellation({ reducedMotion });
+initDaylight({ reducedMotion });
 
 // Route all in-page anchor clicks through Lenis so nav + skip link
 // smooth-scroll to their targets instead of jumping. Falls back to

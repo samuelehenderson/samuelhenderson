@@ -299,6 +299,48 @@
   z-index: 1;
 }
 
+/* Disabled + sending state on the Send button */
+.note__send:disabled {
+  opacity: 0.6;
+  cursor: default;
+  transform: none;
+}
+
+/* Inline error banner — keeps the form editable, just flags the issue */
+.note__error {
+  margin: var(--space-3) 0 0;
+  padding: 0.65rem 0.9rem;
+  border-left: 2px solid #b0672a;
+  background: rgba(176, 103, 42, 0.08);
+  color: #6e4318;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  border-radius: 0 3px 3px 0;
+  position: relative;
+  z-index: 1;
+}
+
+/* Success state — form contents get replaced with the "note received" note */
+.contact__note.is-sent {
+  text-align: left;
+  min-height: 240px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.contact__note.is-sent .note__salutation {
+  font-size: 1.35rem;
+  margin-bottom: var(--space-3);
+}
+.note__body {
+  position: relative;
+  z-index: 1;
+  color: #3d2a17;
+  font-size: 0.98rem;
+  line-height: 1.6;
+  margin: 0 0 var(--space-4);
+}
+
 /* ── Footer signoff, bottom-center ── */
 .contact__footer {
   position: absolute;

@@ -122,10 +122,38 @@ export function initDive({ reducedMotion }) {
   const grid    = scene.querySelector('.dive__grid');
   const capMid  = scene.querySelector('.dive__caption--mid');
   const capEnd  = scene.querySelector('.dive__caption--end');
+  const captions = scene.querySelector('.dive__content');
 
   if (reducedMotion) {
     // CSS already handles the end-state; nothing more to do.
     return;
+  }
+
+  // Hand-off to the rooms gallery: when it goes horizontal (gallery.js,
+  // same reduced-motion rule) it rises over this scene's last screen.
+  // .dive--handoff makes the scene one screen taller so the stage stays
+  // stuck while that happens. The gallery is see-through while it rises;
+  // gallery.js fades in its own backdrop and this copy of it (.dive__handoff)
+  // at the same rate, so both sides of its rising edge always show the
+  // same picture — the corner reads as one continuous space, no seam.
+  const galleryBg = document.querySelector('[data-scene="gallery"] .gallery__track')
+    && document.querySelector('[data-scene="gallery"] .gallery__bg svg');
+  let handoff = null;
+  let fog = null;
+  if (galleryBg) {
+    scene.classList.add('dive--handoff');
+    const stage = scene.querySelector('.dive__inner');
+    // depth fog over the near floor: the rooms rise over a darkening floor
+    // while the horizon glow stays bright above them
+    fog = document.createElement('div');
+    fog.className = 'dive__fog';
+    fog.setAttribute('aria-hidden', 'true');
+    stage.appendChild(fog);
+    handoff = document.createElement('div');
+    handoff.className = 'dive__handoff';
+    handoff.setAttribute('aria-hidden', 'true');
+    handoff.appendChild(galleryBg.cloneNode(true));
+    stage.appendChild(handoff);
   }
 
   const rain = new CodeRain(canvas, scene);
@@ -136,7 +164,8 @@ export function initDive({ reducedMotion }) {
     scrollTrigger: {
       trigger: scene,
       start: 'top top',
-      end: 'bottom bottom',
+      // with the hand-off screen, the dive itself still ends where it did
+      end: handoff ? 'bottom 200%' : 'bottom bottom',
       scrub: 0.4,
       invalidateOnRefresh: true,
     },
@@ -181,8 +210,30 @@ export function initDive({ reducedMotion }) {
       { opacity: 0, scale: 1.08 },
       { opacity: 1, scale: 1, duration: 0.28, ease: 'power2.out' }, 0.74);
 
-  // End caption — "SELECTED WORK ↓" handoff to next scene
+  // End caption — names the rooms that follow
   tl.fromTo(capEnd,
     { opacity: 0, y: 24 },
     { opacity: 1, y: 0, duration: 0.10, ease: 'power2.out' }, 0.86);
+
+  if (!handoff) return;
+
+  // ── Hand-off screen — the gallery rises over the last frame ─────
+  // 1:1 with the scroll (no scrub lag). The horizon drifts up a little so
+  // the space keeps moving while the rooms rise (parallax: they rise at
+  // full speed), the near floor fogs over, and the caption lifts away
+  // before the rooms reach it. The crossfade into the gallery's backdrop
+  // is gallery.js's (it must match the gallery's own fade exactly).
+  gsap.timeline({
+    scrollTrigger: {
+      trigger: scene,
+      start: 'bottom 200%',
+      end: 'bottom bottom',
+      scrub: true,
+      invalidateOnRefresh: true,
+    },
+    defaults: { ease: 'none' },
+  })
+    .fromTo(grid, { y: 0 }, { y: () => -0.1 * window.innerHeight, duration: 1, immediateRender: false }, 0)
+    .fromTo(fog, { opacity: 0 }, { opacity: 1, duration: 0.45, ease: 'power1.inOut', immediateRender: false }, 0)
+    .fromTo(captions, { opacity: 1, y: 0 }, { opacity: 0, y: -110, duration: 0.42, immediateRender: false }, 0.08);
 }

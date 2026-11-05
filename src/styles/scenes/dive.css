@@ -17,8 +17,47 @@
   top: 0;
   height: 100vh;
   overflow: hidden;
+  /* own stacking context: the layers' z-indexes stay inside, so the
+     gallery (next in the page) paints over this stage as it rises */
+  isolation: isolate;
   background: radial-gradient(ellipse 80% 60% at 50% 50%, #06090f 0%, #02040a 70%);
 }
+
+/* One more screen of scroll while the rooms gallery rises over the
+   still last frame (gallery.css: margin-top: -100vh). Added by JS only
+   when the gallery goes horizontal. */
+.scene--dive.dive--handoff { height: 350vh; }
+
+/* A copy of the gallery's backdrop (same box, same slice, base colour +
+   grid as one layer): gallery.js fades it in at exactly the rate of the
+   gallery's own backdrop, so both sides of the gallery's rising edge show
+   the very same picture. */
+.dive__handoff {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  opacity: 0;
+  background: #04070d; /* = .gallery--horizontal .gallery__bg */
+  pointer-events: none;
+}
+
+/* Depth fog over the near floor (added by dive.js, faded in through the
+   hand-off screen): the floor the rooms rise over darkens into the
+   gallery's colour while the horizon glow above stays bright. It also
+   covers the strip the horizon's drift uncovers at the bottom. */
+.dive__fog {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  opacity: 0;
+  pointer-events: none;
+  background: linear-gradient(to bottom,
+    rgba(2, 5, 10, 0) 0%,
+    rgba(2, 5, 10, 0) 56%,
+    rgba(2, 5, 10, 0.72) 76%,
+    #02050a 90%);
+}
+.dive__handoff svg { width: 100%; height: 100%; display: block; opacity: 0.7; }
 
 /* "Room residue" — soft vignette + a hint of the workshop's warm lamp
    at bottom-left. Fades out as the camera pushes through the screen. */
@@ -119,6 +158,7 @@
 /* Mobile — fewer scroll vh to keep the transition snappy */
 @media (max-width: 720px) {
   .scene--dive { height: 220vh; }
+  .scene--dive.dive--handoff { height: 320vh; }
   .dive__caption { letter-spacing: 0.22em; }
 }
 

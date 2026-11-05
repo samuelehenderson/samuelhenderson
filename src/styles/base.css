@@ -19,6 +19,10 @@ html {
   text-rendering: optimizeLegibility;
   scroll-behavior: smooth;
 }
+/* With Lenis (desktop) every scroll is already animated in JS and anchor
+   links go through it; native smooth scrolling on top would turn each
+   programmatic scroll into its own animation (settles never land). */
+html.lenis { scroll-behavior: auto; }
 
 body {
   min-height: 100vh;

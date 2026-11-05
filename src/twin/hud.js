@@ -1,7 +1,12 @@
 /**
  * Digital Twin — heads-up display (DOM only; no three.js).
  *
- *   createHud(root, { reducedMotion, coarsePointer }) → hud
+ *   createHud(root, { reducedMotion, coarsePointer, viewer, headSlot }) → hud
+ *
+ *   viewer: true lays the HUD out for the full-screen viewer (phones, tablets):
+ *   no Explore toggle (the canvas always orbits there), and on narrow screens a
+ *   three-up KPI strip with the other readings in the expanded sheet. headSlot
+ *   (an element) takes the live / clock / occupancy line instead of the strip.
  *
  *   hud.on(event, fn) → unsubscribe()
  *     'mode' (mode) · 'time' (hour) · 'play' (bool) · 'speed' (n) · 'fault' (kind)
@@ -127,12 +132,14 @@ function setText(node, text) {
 
 /* ── factory ──────────────────────────────────────────────────── */
 
-export function createHud(root, { reducedMotion = false, coarsePointer = false } = {}) {
+export function createHud(root, { reducedMotion = false, coarsePointer = false, viewer = false, headSlot = null } = {}) {
   const id = `thud${++uid}`;
   const listeners = new Map();
   const timers = new Set();
   // docked layout (KPI strip + bottom sheet) up to 1100 px: the desktop KPI row needs ~1100 px
   const docked = window.matchMedia('(max-width: 1099.98px)');
+  // viewer on a phone (either way up): three KPIs in the strip, the rest in the expanded sheet
+  const narrow = window.matchMedia('(max-width: 720px), (max-height: 520px) and (max-width: 1099.98px)');
 
   const ui = {
     mode: 'live',
@@ -177,6 +184,7 @@ export function createHud(root, { reducedMotion = false, coarsePointer = false }
   root.replaceChildren();
   root.classList.add('thud-root');
   root.classList.toggle('is-coarse', !!coarsePointer);
+  root.classList.toggle('is-viewer', !!viewer);
   root.dataset.mode = ui.mode;
 
   // Loading pill
@@ -227,18 +235,25 @@ export function createHud(root, { reducedMotion = false, coarsePointer = false }
   );
   kpis.kw.row.append(sparkSvg);
 
-  const status = el(
-    'section',
-    { class: 'thud-panel thud-status', 'aria-label': 'Building status' },
-    el(
-      'div',
-      { class: 'thud-status__head' },
-      el('span', { class: 'thud-live' }, el('span', { class: 'thud-live__dot', 'aria-hidden': 'true' }), 'Live sim'),
-      el('span', { class: 'thud-clock thud-num' }, clockDay, ' ', clockTime),
-      occChip,
-    ),
-    kpiList,
+  const statusHead = el(
+    'div',
+    { class: 'thud-status__head' },
+    el('span', { class: 'thud-live' }, el('span', { class: 'thud-live__dot', 'aria-hidden': 'true' }), 'Live sim'),
+    el('span', { class: 'thud-clock thud-num' }, clockDay, ' ', clockTime),
+    occChip,
   );
+  const status = el('section', { class: 'thud-panel thud-status', 'aria-label': 'Building status' }, headSlot ? null : statusHead, kpiList);
+  if (headSlot) headSlot.replaceChildren(statusHead);
+
+  // viewer, narrow screens: the readings that don't fit the three-up strip
+  const readingsList = el('dl', { class: 'thud-kpis thud-readings__list' });
+  const readings = viewer ? el('section', { class: 'thud-panel thud-readings', 'aria-label': 'More readings' }, readingsList) : null;
+  const MOVABLE = ['chws', 'occ', 'comfort'];
+  function placeKpis() {
+    if (!viewer || ui.destroyed) return;
+    if (narrow.matches) for (const k of MOVABLE) readingsList.append(kpis[k].wrap);
+    else for (const k of MOVABLE) kpiList.insertBefore(kpis[k].wrap, kpis.alarms.wrap);
+  }
 
   // Alarms
   const alarmCount = el('span', { class: 'thud-alarms__count thud-num', text: '0' });
@@ -258,7 +273,13 @@ export function createHud(root, { reducedMotion = false, coarsePointer = false }
   const legend = el('section', { class: 'thud-panel thud-legend', 'aria-label': 'Legend' });
   const hint = el('p', {
     class: 'thud-hint',
-    text: coarsePointer ? 'Tap any zone · Explore 3D to orbit' : 'Drag to orbit · Click any zone',
+    text: viewer
+      ? coarsePointer
+        ? 'Drag to orbit · pinch to zoom · tap any zone'
+        : 'Drag to orbit · scroll to zoom · click any zone'
+      : coarsePointer
+        ? 'Tap any zone · Explore 3D to orbit'
+        : 'Drag to orbit · Click any zone',
   });
   // Keyboard / screen-reader route to every card (the canvas itself isn't focusable)
   const inspectSel = el('select', { class: 'thud-inspect__sel', id: `${id}-inspect`, 'aria-label': 'Inspect a machine or a floor on the model' });
@@ -400,7 +421,7 @@ export function createHud(root, { reducedMotion = false, coarsePointer = false }
     'div',
     { class: 'thud-layer' },
     el('div', { class: 'thud-left' }, status, alarms),
-    el('div', { class: 'thud-sheet' }, el('div', { class: 'thud-right' }, modes, legend, inspect, hint), el('div', { class: 'thud-bottom' }, dock), view),
+    el('div', { class: 'thud-sheet' }, el('div', { class: 'thud-right' }, modes, readings, legend, inspect, hint), el('div', { class: 'thud-bottom' }, dock), view),
   );
 
   const leftCol = layer.querySelector('.thud-left');
@@ -642,15 +663,19 @@ export function createHud(root, { reducedMotion = false, coarsePointer = false }
     const r = root.getBoundingClientRect();
     return r.bottom > 0 && r.top < window.innerHeight;
   };
+  // Escape closes the innermost thing open; it marks the event handled
+  // (defaultPrevented) so an enclosing viewer only closes on the next press
   const onDocKey = (e) => {
-    if (e.key !== 'Escape' || !onStage()) return;
+    if (e.key !== 'Escape' || e.defaultPrevented || !onStage()) return;
     if (ui.menuOpen) {
       e.preventDefault();
       closeMenu(true);
     } else if (ui.cardOpen) {
+      e.preventDefault();
       hideCard(true);
       emit('close-card');
     } else if (ui.exploring) {
+      e.preventDefault();
       setExploring(false, true);
     }
   };
@@ -767,7 +792,8 @@ export function createHud(root, { reducedMotion = false, coarsePointer = false }
 
     // Demand + sparkline
     setText(kpis.kw.v, int(s.kw));
-    setText(kpis.kw.s, finite(s.kwh) ? `${int(s.kwh)} kWh today` : '\u00a0');
+    // the viewer's three-up phone strip has no room for "today"
+    setText(kpis.kw.s, finite(s.kwh) ? `${int(s.kwh)} kWh${viewer && narrow.matches ? '' : ' today'}` : '\u00a0');
     sampleSpark(s);
 
     // Chilled water supply: the plant's common supply header; failing that,
@@ -1110,7 +1136,8 @@ export function createHud(root, { reducedMotion = false, coarsePointer = false }
   function maybeTapHint() {
     if (!coarsePointer || ui.tapHinted || !ui.ready || !ui.introVisible) return;
     ui.tapHinted = true;
-    later(() => toast('Tap any zone or machine for live readings', 'info'), 600);
+    const text = viewer ? 'Drag to orbit · pinch to zoom · tap a zone' : 'Tap any zone or machine for live readings';
+    later(() => toast(text, 'info'), viewer ? 1900 : 600);
   }
 
   function setReady() {
@@ -1146,6 +1173,8 @@ export function createHud(root, { reducedMotion = false, coarsePointer = false }
     ui.destroyed = true;
     sheetRO?.disconnect();
     docked.removeEventListener?.('change', syncSheetWheel);
+    narrow.removeEventListener?.('change', placeKpis);
+    if (headSlot && statusHead.parentNode === headSlot) statusHead.remove();
     document.removeEventListener('keydown', onDocKey);
     document.removeEventListener('pointerdown', onDocPointer, true);
     if (timeRaf) cancelAnimationFrame(timeRaf);
@@ -1153,7 +1182,7 @@ export function createHud(root, { reducedMotion = false, coarsePointer = false }
     timers.clear();
     listeners.clear();
     root.replaceChildren();
-    root.classList.remove('thud-root', 'is-coarse', 'is-ready', 'is-loading', 'is-hidden', 'is-exploring', 'is-expanded', 'has-card', 'has-alarms', 'is-paused', 'is-disabled');
+    root.classList.remove('thud-root', 'is-coarse', 'is-viewer', 'is-ready', 'is-loading', 'is-hidden', 'is-exploring', 'is-expanded', 'has-card', 'has-alarms', 'is-paused', 'is-disabled');
     root.style.removeProperty('--thud-intro');
     delete root.dataset.mode;
   }
@@ -1161,6 +1190,10 @@ export function createHud(root, { reducedMotion = false, coarsePointer = false }
   const sheetRO = typeof ResizeObserver === 'function' ? new ResizeObserver(() => syncSheetWheel()) : null;
   sheetRO?.observe(sheet);
   docked.addEventListener?.('change', syncSheetWheel);
+  if (viewer) {
+    placeKpis();
+    narrow.addEventListener?.('change', placeKpis);
+  }
 
   // Initial UI
   renderLegend(ui.mode);

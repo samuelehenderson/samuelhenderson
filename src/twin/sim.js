@@ -312,7 +312,7 @@ const MAX_SUB = 40;
 const ALARM_HOLD = 45 * 60; // s after a mode change / time jump before space alarms arm
 const FAULT_KINDS = ['vav-stuck', 'chiller-trip', 'fan-fail', 'hot-day'];
 
-export function createSim({ seed = 7, startHour = 9.5 } = {}) {
+export function createSim({ seed = 7, startHour = 9.5, deferPreroll = false } = {}) {
   const rand = mulberry32(seed);
   const layout = buildLayout();
   const zoneById = new Map(layout.zones.map((z) => [z.id, z]));
@@ -1188,10 +1188,33 @@ export function createSim({ seed = 7, startHour = 9.5 } = {}) {
   const sh = ((fin(Number(startHour), 9.5) % 24) + 24) % 24;
   clk = 23; curDayAbs = 0;
   const preH = sh + 1, nPre = Math.max(1, Math.ceil(preH * 60));
-  for (let i = 0; i < nPre; i++) sub((preH * 3600) / nPre);
-  clk = 24 + sh;
-  state.hour = sh; state.day = 1;
-  finalize();
+  const preDt = (preH * 3600) / nPre;
+  const endPre = () => {
+    clk = 24 + sh;
+    state.hour = sh; state.day = 1;
+    finalize();
+  };
+  if (!deferPreroll) {
+    for (let i = 0; i < nPre; i++) sub(preDt);
+    endPre();
+    return sim;
+  }
+  // Deferred: the same steps, run in slices by the caller so a page never
+  // spends one long main-thread task on them. The result is identical.
+  //   await sim.preroll(() => new Promise((r) => setTimeout(r)))
+  let done = 0;
+  sim.preroll = async (pause, slice = 90) => {
+    while (done < nPre) {
+      const end = Math.min(nPre, done + Math.max(1, slice | 0));
+      for (; done < end; done++) sub(preDt);
+      if (done < nPre && typeof pause === 'function') await pause();
+    }
+    if (sim.preroll) {
+      delete sim.preroll;
+      endPre();
+    }
+    return sim;
+  };
   return sim;
 }
 

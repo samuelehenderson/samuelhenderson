@@ -48,7 +48,11 @@ function revealWindow(run, levels) {
   return [0.32 + li * 0.05, 0.2];
 }
 
-export function createFlows({ layout, levels, levelU, modeU, ctxU, quality }) {
+export async function createFlows({ layout, levels, levelU, modeU, ctxU, quality, pause = null }) {
+  // `pause` (optional) yields to the browser between the heavy merges
+  const breathe = async () => {
+    if (typeof pause === 'function') await pause();
+  };
   const group = new Group();
   group.name = 'services';
   const disposables = [];
@@ -261,7 +265,9 @@ export function createFlows({ layout, levels, levelU, modeU, ctxU, quality }) {
   }
 
   const airGeo = buildKind(true);
+  await breathe();
   const waterGeo = buildKind(false);
+  await breathe();
   const airMat = runMaterial();
   const waterMat = runMaterial();
   const airX = xrayMaterial();

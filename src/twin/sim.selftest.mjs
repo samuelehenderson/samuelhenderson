@@ -363,6 +363,21 @@ section('determinism');
 }
 
 // =============================================================================================
+section('deferred pre-roll (the page runs it in slices)');
+{
+  const a = createSim({ seed: 7, startHour: 9.5 });
+  const b = createSim({ seed: 7, startHour: 9.5, deferPreroll: true });
+  ok(typeof b.preroll === 'function', 'deferred sim exposes preroll()');
+  let pauses = 0;
+  await b.preroll(async () => { pauses++; }, 90);
+  ok(pauses >= 5, `pre-roll yields between slices (${pauses} pauses)`);
+  ok(b.preroll === undefined, 'preroll() removes itself once done');
+  ok(JSON.stringify(a.state) === JSON.stringify(b.state), 'sliced pre-roll gives the identical state');
+  run(a, 1800); run(b, 1800);
+  ok(JSON.stringify(a.state) === JSON.stringify(b.state), 'and the identical future');
+}
+
+// =============================================================================================
 section('performance');
 {
   for (const [speed, dt] of [[60, 1 / 60], [600, 1 / 60], [3600, 1 / 60]]) {

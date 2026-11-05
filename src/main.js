@@ -22,17 +22,21 @@ import { initTwin } from './scenes/twin.js';
 gsap.registerPlugin(ScrollTrigger);
 
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+// Phones and tablets: touch is their primary input
+const touchFirst = window.matchMedia('(hover: none), (pointer: coarse)').matches;
 
-// Smooth scroll — disabled under reduced-motion so we don't override
-// the user's preference. ScrollTrigger reads scroll position the same
-// either way; native scroll just feeds it directly.
+// Smooth scroll for wheels — disabled under reduced-motion so we don't
+// override the user's preference, and never created on touch-first devices:
+// Lenis doesn't smooth touch anyway, but its non-passive window touch
+// listeners would make every swipe wait on the main thread, so any busy
+// moment would freeze scrolling. ScrollTrigger reads scroll position the
+// same either way; native scroll just feeds it directly.
 let lenis = null;
-if (!reducedMotion) {
+if (!reducedMotion && !touchFirst) {
   lenis = new Lenis({
     duration: 1.1,
     easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
     smoothWheel: true,
-    smoothTouch: false, // native touch scroll feels better on phones
   });
 
   lenis.on('scroll', ScrollTrigger.update);
@@ -52,7 +56,7 @@ initHero({ reducedMotion });
 initDive({ reducedMotion });
 initGallery({ reducedMotion, lenis });
 initConstellation({ reducedMotion });
-initTwin({ reducedMotion });
+initTwin({ reducedMotion, lenis });
 initDaylight({ reducedMotion });
 
 // Route all in-page anchor clicks through Lenis so nav + skip link

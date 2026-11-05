@@ -76,7 +76,12 @@ const GLSL_CUT = /* glsl */ `
 `;
 const EDGE_GLOW = 'vec3(0.32, 0.68, 1.0) * 2.2 * bEdge';
 
-export function createWorld({ layout, levels, quality, modeU, ctxU }) {
+export async function createWorld({ layout, levels, quality, modeU, ctxU, pause = null }) {
+  // `pause` (optional) yields to the browser between levels so building the
+  // tower never becomes one long main-thread task
+  const breathe = async () => {
+    if (typeof pause === 'function') await pause();
+  };
   const disposables = new Set();
   const own = (x) => (x && disposables.add(x), x);
   const root = new Group();
@@ -129,6 +134,7 @@ export function createWorld({ layout, levels, quality, modeU, ctxU }) {
   const deskGeo = own(makeDeskGeometry());
   const personGeo = own(makePersonGeometry(quality));
   const vavGeo = own(makeVavGeometry());
+  await breathe();
 
   /* ── per-level materials (clones share programs; differ by uReveal) ─ */
   function levelMaterials(reveal, cut) {
@@ -164,6 +170,7 @@ export function createWorld({ layout, levels, quality, modeU, ctxU }) {
   const rand = rng(1234);
 
   for (let li = 0; li < levels.count; li++) {
+    if (li > 0) await breathe();
     const L = levels.list[li];
     const g = new Group();
     g.name = `level-${L.id}`;
@@ -451,8 +458,10 @@ export function createWorld({ layout, levels, quality, modeU, ctxU }) {
       rect(-0.45, hx + 0.16, hz + 0.16);
     }
 
-    // equipment on this level
+    // equipment on this level (the plant and roof levels carry most of it: yield every few machines)
+    let built = 0;
     for (const eq of layout.equipment.filter((e) => e.level === L.id)) {
+      if (built++ % 4 === 3) await breathe();
       const item = buildEquipment(eq, { reveal, own, rand, quality, tex });
       if (!item) continue;
       item.group.position.set(eq.x, eq.y - L.y, eq.z);
@@ -543,6 +552,7 @@ export function createWorld({ layout, levels, quality, modeU, ctxU }) {
     zoneTex.needsUpdate = true;
   }
 
+  let interiorOn = true;
   const world = {
     root,
     levelGroups,
@@ -570,7 +580,7 @@ export function createWorld({ layout, levels, quality, modeU, ctxU }) {
       writeZones(state, dt);
       const { reducedMotion, mode } = opts;
       for (const ls of levelState) {
-        if (ls.people) updatePeople(ls.people, zs, dt, t, reducedMotion);
+        if (ls.people && interiorOn) updatePeople(ls.people, zs, dt, t, reducedMotion);
         // landing flash on the blueprint lines
         ls.flash = Math.max(0, ls.flash - dt * 1.4);
       }
@@ -614,6 +624,16 @@ export function createWorld({ layout, levels, quality, modeU, ctxU }) {
         ls.lineMat.opacity = base;
         const flash = 1 + ls.flash * 2.5;
         ls.lineMat.color.copy(PALETTE.accent).multiplyScalar(1.25 * flash * nightLift);
+      }
+    },
+    /** Desks and occupants on or off (phones hide them at overview distance, where they read as noise). */
+    setInteriorDetail(on) {
+      on = !!on;
+      if (interiorOn === on) return;
+      interiorOn = on;
+      for (const ls of levelState) {
+        if (ls.mats.desk) ls.mats.desk.visible = on;
+        if (ls.mats.person) ls.mats.person.visible = on;
       }
     },
     /** Forget cached intro visibility (after something forced every object visible). */

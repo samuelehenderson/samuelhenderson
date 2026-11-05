@@ -8,9 +8,12 @@
 
    Stage state classes (set by src/scenes/twin.js):
      .is-js .is-loading .is-ready .is-fallback .is-exploring .is-reduced
+     .is-launch (phones / tablets / weak hardware: blueprint + Launch;
+                 the model runs in the full-screen .twin-viewer instead)
    ───────────────────────────────────────────────────────────── */
 
-.scene--twin {
+.scene--twin,
+.twin-viewer {
   --twin-sa: #4ea8ff;
   --twin-ra: #7c8aa5;
   --twin-chw: #38e1ff;
@@ -22,7 +25,8 @@
   --twin-panel-bg: linear-gradient(180deg, rgba(22, 27, 36, 0.74), rgba(12, 15, 22, 0.66));
   --twin-panel-border: rgba(255, 255, 255, 0.085);
   --twin-panel-shadow: 0 18px 50px -18px rgba(0, 0, 0, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.045);
-
+}
+.scene--twin {
   position: relative;
   height: 260vh;
   background: #04070d;
@@ -383,11 +387,13 @@
 .thud-root:not(.is-ready) .thud-layer { visibility: hidden; }
 .thud-root.is-hidden .thud-layer,
 .thud-root.is-hidden .thud-layer * { pointer-events: none; }
-/* A keyboard user tabbing into the HUD always sees what has focus */
-.thud-root.is-hidden:focus-within .thud-layer { opacity: 1; transform: none; }
-.thud-root.is-hidden:focus-within .thud-layer .thud-panel,
-.thud-root.is-hidden:focus-within .thud-layer .thud-panel * { pointer-events: auto; }
-.twin__stage:has(.thud-root.is-hidden:focus-within) .twin__intro { opacity: 0 !important; }
+/* A keyboard user tabbing into the HUD always sees what has focus. Keyboard
+   focus only: a clicked or tapped button keeps focus too, and that must not
+   keep the HUD lit over the intro after scrolling back up. */
+.thud-root.is-hidden:has(:focus-visible) .thud-layer { opacity: 1; transform: none; }
+.thud-root.is-hidden:has(:focus-visible) .thud-layer .thud-panel,
+.thud-root.is-hidden:has(:focus-visible) .thud-layer .thud-panel * { pointer-events: auto; }
+.twin__stage:has(.thud-root.is-hidden :focus-visible) .twin__intro { opacity: 0 !important; }
 .thud-root.is-disabled .thud-layer { opacity: calc(var(--thud-intro) * 0.5); }
 
 /* Buttons */
@@ -1475,3 +1481,396 @@ dd[data-status="alarm"] .thud-st { background: var(--twin-alarm); box-shadow: 0 
 }
 @keyframes twinFade { from { opacity: 0; } }
 @keyframes twinFadeOut { to { opacity: 0; } }
+
+/* ═════════════════════════════════════════════════════════════
+   Launch presentation (.is-launch: phones, tablets, touch-first
+   screens, weak hardware). The section is short and in normal
+   flow; the blueprint is the hero and draws itself in as it
+   scrolls into view (one custom property, --draw, set by
+   src/scenes/twin.js). Nothing WebGL runs while the page
+   scrolls: "Launch live 3D" opens the full-screen viewer.
+   ═════════════════════════════════════════════════════════════ */
+.scene--twin.is-launch,
+.scene--twin.is-launch:has(.twin__stage.is-fallback) { height: auto; }
+.twin__stage.is-launch {
+  position: relative;
+  top: auto;
+  height: auto;
+  display: flex;
+  flex-direction: column;
+  padding: calc(var(--header-h) + var(--space-5)) var(--gutter) calc(var(--space-7) + env(safe-area-inset-bottom, 0px));
+}
+.twin__stage.is-launch .twin__canvas-host,
+.twin__stage.is-launch .twin__hud,
+.twin__stage.is-launch .twin__cue,
+.twin__stage.is-launch .twin__fallback-note[data-twin-fallback-note] { display: none; }
+.twin__stage.is-launch .twin__intro {
+  position: relative;
+  top: auto;
+  left: auto;
+  right: auto;
+  order: 1;
+  max-width: 36rem;
+  will-change: auto;
+}
+.twin__stage.is-launch .twin__intro::before { display: none; } /* the copy sits on the backdrop, not on a model */
+.twin__stage.is-launch .twin__fallback {
+  position: relative;
+  inset: auto;
+  order: 2;
+  margin: var(--space-3) calc(-0.5 * var(--gutter)) 0;
+  transition: none;
+}
+.twin__stage.is-launch .twin__poster {
+  position: relative;
+  top: auto;
+  right: auto;
+  bottom: auto;
+  left: auto;
+  width: 100%;
+  max-width: 760px;
+  max-height: 72svh;
+  aspect-ratio: 836 / 790;
+  margin: 0 auto;
+}
+.twin__stage.is-launch .twin__poster-floor { bottom: -4%; height: 62%; opacity: 0.45; }
+.twin__stage.is-launch .twin__launch { order: 3; }
+
+/* Wide-ish launch screens (landscape phones, tablets): copy + action left, blueprint right */
+@media (min-aspect-ratio: 5/4) and (min-width: 600px) {
+  .twin__stage.is-launch {
+    display: grid;
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    grid-template-rows: auto 1fr;
+    column-gap: var(--space-6);
+    align-items: start;
+    min-height: 100svh;
+  }
+  .twin__stage.is-launch .twin__intro { grid-column: 1; grid-row: 1; align-self: end; }
+  .twin__stage.is-launch .twin__launch { grid-column: 1; grid-row: 2; }
+  .twin__stage.is-launch .twin__fallback { grid-column: 2; grid-row: 1 / span 2; align-self: center; margin: 0; }
+  .twin__stage.is-launch .twin__poster { max-height: calc(100svh - var(--header-h) - 48px); }
+  .twin__stage.is-launch .twin__launch { align-items: flex-start; text-align: left; }
+}
+
+.twin__launch {
+  position: relative;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+  text-align: center;
+}
+.twin__launch-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.7rem;
+  min-height: 52px;
+  padding: 0 1.5rem 0 1.2rem;
+  border: 1px solid rgba(78, 168, 255, 0.62);
+  border-radius: var(--radius-pill);
+  background: linear-gradient(180deg, rgba(78, 168, 255, 0.3), rgba(78, 168, 255, 0.12));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 12px 34px -14px var(--color-accent-glow);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
+}
+.twin__launch-btn svg { width: 20px; height: 20px; flex: none; color: var(--color-accent-soft); }
+.twin__launch-btn:active { transform: scale(0.97); }
+.twin__launch-btn:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; }
+@media (hover: hover) {
+  .twin__launch-btn:hover { border-color: var(--color-accent); background: linear-gradient(180deg, rgba(78, 168, 255, 0.38), rgba(78, 168, 255, 0.16)); }
+}
+@media (max-width: 520px) {
+  .twin__launch-btn { width: 100%; max-width: 360px; }
+}
+.twin__launch-note {
+  max-width: 34ch;
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+.twin__launch.is-unavailable .twin__launch-note {
+  max-width: 40ch;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--twin-panel-border);
+  border-left: 2px solid var(--color-accent);
+  border-radius: var(--radius-sm);
+  background: rgba(12, 15, 22, 0.9);
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  letter-spacing: 0.02em;
+  text-align: left;
+}
+
+/* The blueprint's scroll-linked draw-in. Each stroke has pathLength 1 and a
+   start (--d); --draw runs 0 → 1 as the poster scrolls into view. */
+.twin-poster.is-drawable .twin-poster__slab,
+.twin-poster.is-drawable .twin-poster__run {
+  stroke-dasharray: 1 1;
+  stroke-dashoffset: calc(1 - clamp(0, (var(--draw, 1) - var(--d, 0)) / 0.3, 1));
+}
+.twin-poster.is-drawable path[filter] { opacity: clamp(0, (var(--draw, 1) - 0.5) / 0.35, 1); }
+.twin-poster.is-drawable .twin-poster__flow { opacity: clamp(0, (var(--draw, 1) - 0.78) / 0.2, 1); }
+.twin-poster.is-drawable .twin-poster__below { opacity: calc(0.6 * clamp(0, var(--draw, 1) / 0.25, 1)); }
+.twin-poster.is-drawable .twin-poster__labels,
+.twin-poster.is-drawable .twin-poster__title,
+.twin-poster.is-drawable .twin-poster__alarm { opacity: clamp(0, (var(--draw, 1) - 0.72) / 0.22, 1); }
+.twin-poster.is-drawable > ellipse { opacity: calc(0.2 + 0.4 * var(--draw, 1)); }
+/* looping animations only while the drawn poster is on screen */
+.twin__stage.is-launch .twin-poster:not(.is-inview) *,
+.twin__stage.is-launch .twin-poster.is-drawable:not(.is-drawn) .twin-poster__flow { animation-play-state: paused; }
+
+/* ═════════════════════════════════════════════════════════════
+   Full-screen viewer (src/scenes/twin-viewer.js). A fixed overlay
+   over the whole page: bar with Close on top, the canvas full
+   bleed, the HUD in its docked phone layout (KPI strip, bottom
+   sheet, card as a bottom sheet). Solid panels: no backdrop blur
+   over a canvas that changes every frame.
+   ═════════════════════════════════════════════════════════════ */
+html.twin-viewer-open,
+html.twin-viewer-open body {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+html.twin-viewer-open body { padding-right: var(--twv-sbw, 0px); }
+
+.twin-viewer {
+  --twv-bar: 56px;
+  --header-h: calc(var(--twv-bar) + env(safe-area-inset-top, 0px));
+  --twin-panel-bg: linear-gradient(180deg, rgba(18, 22, 30, 0.94), rgba(11, 14, 20, 0.92));
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  isolation: isolate;
+  background:
+    radial-gradient(ellipse 70% 45% at 50% 58%, rgba(78, 168, 255, 0.1), transparent 70%),
+    linear-gradient(180deg, #03060b 0%, #060a12 55%, #04070d 100%);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  overscroll-behavior: contain;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  opacity: 0;
+  transition: opacity 220ms var(--ease-out);
+}
+.twin-viewer[hidden] { display: none; }
+.twin-viewer.is-open { opacity: 1; }
+
+.twv-stage { position: absolute; inset: 0; z-index: 1; }
+.twin-viewer .twin__canvas-host canvas { touch-action: none; }
+.twin-viewer .twin__canvas-host canvas { opacity: 0; transition: opacity 500ms var(--ease-out); }
+.twin-viewer.is-live .twin__canvas-host canvas { opacity: 1; }
+
+.twv-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: var(--header-h);
+  padding: env(safe-area-inset-top, 0px) max(var(--gutter), env(safe-area-inset-right, 0px)) 0 max(var(--gutter), env(safe-area-inset-left, 0px));
+  background: linear-gradient(180deg, rgba(4, 7, 13, 0.96) 0%, rgba(4, 7, 13, 0.85) 72%, rgba(4, 7, 13, 0) 100%);
+  pointer-events: none;
+}
+.twv-bar > * { pointer-events: auto; }
+.twv-title { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.twv-title__name {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--color-accent-soft);
+}
+.twv-status { min-height: 14px; }
+.twin-viewer:not(.is-live) .twv-status { visibility: hidden; }
+.twv-status .thud-status__head {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+.twv-status .thud-clock { font-size: 11px; }
+.twv-status .thud-occ { margin-left: 0; font-size: 10px; }
+.twv-status .thud-live { display: none; }
+.twv-close {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: none;
+  height: 40px;
+  margin-left: auto;
+  padding: 0 15px 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: var(--radius-pill);
+  background: rgba(16, 20, 28, 0.92);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.twv-close svg { width: 16px; height: 16px; }
+.twv-close:focus-visible,
+.twv-error__close:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+@media (hover: hover) {
+  .twv-close:hover { border-color: rgba(78, 168, 255, 0.5); background: rgba(78, 168, 255, 0.14); }
+}
+
+.twv-loading,
+.twv-error {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 9;
+  width: min(320px, calc(100% - 48px));
+  padding: 16px 18px 15px;
+  transform: translate(-50%, -50%);
+  border: 1px solid var(--twin-panel-border);
+  border-radius: 14px;
+  background: var(--twin-panel-bg);
+  box-shadow: var(--twin-panel-shadow);
+}
+.twv-loading[hidden],
+.twv-error[hidden] { display: none; }
+.twv-loading__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 9px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+.twv-loading__label { margin: 0; }
+.twv-loading__pct { color: var(--color-text); font-variant-numeric: tabular-nums; }
+.twv-loading__bar {
+  position: relative;
+  height: 2px;
+  overflow: hidden;
+  border-radius: 1px;
+  background: rgba(78, 168, 255, 0.16);
+}
+.twv-loading__bar i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: calc(var(--p, 0) * 100%);
+  background: var(--color-accent);
+  box-shadow: 0 0 10px var(--color-accent);
+  transition: width 260ms var(--ease-out);
+}
+.twv-loading__note { margin: 10px 0 0; font-size: 0.8rem; line-height: 1.45; color: var(--color-text-muted); }
+.twv-error__text { margin: 0 0 12px; font-size: 0.9rem; line-height: 1.5; color: var(--color-text); }
+.twv-error__close {
+  height: 40px;
+  padding: 0 16px;
+  border: 1px solid rgba(78, 168, 255, 0.5);
+  border-radius: var(--radius-pill);
+  background: rgba(78, 168, 255, 0.12);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* HUD inside the viewer */
+.twin-viewer .thud-panel,
+.twin-viewer .thud-sheet {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.twin-viewer .thud-load { display: none !important; }
+.thud-root.is-viewer .thud-explore { display: none !important; }
+.thud-root.is-viewer .thud-sheet,
+.thud-root.is-viewer .thud-card,
+.thud-root.is-viewer .thud-menu {
+  touch-action: pan-y;
+  overscroll-behavior: contain;
+}
+.thud-root.is-viewer .thud-status { touch-action: pan-x; }
+/* type: labels never under 11 px, controls never under 12 px */
+.thud-root.is-viewer .thud-btn,
+.thud-root.is-viewer .thud-seg button { font-size: 0.75rem; }
+.thud-root.is-viewer .thud-kpi dt,
+.thud-root.is-viewer .thud-kpi__s,
+.thud-root.is-viewer .thud-legend__list li,
+.thud-root.is-viewer .thud-ramp-labels,
+.thud-root.is-viewer .thud-time__ticks,
+.thud-root.is-viewer .thud-time__sub,
+.thud-root.is-viewer .thud-inspect__lbl,
+.thud-root.is-viewer .thud-alarm__meta,
+.thud-root.is-viewer .thud-card__kind,
+.thud-root.is-viewer .thud-card__rows .thud-u { font-size: 11px; letter-spacing: 0.08em; }
+.thud-root.is-viewer .thud-card__rows dt,
+.thud-root.is-viewer .thud-card__rows dd { font-size: 0.8rem; }
+.thud-readings { display: none; }
+.thud-root.is-viewer .thud-legend { order: 5; }
+.thud-root.is-viewer .thud-inspect { order: 6; }
+@media (max-width: 1099.98px) {
+  .thud-root.is-viewer .thud-card { max-height: 42%; }
+  .thud-root.is-viewer.is-expanded .thud-sheet { max-height: 48%; }
+}
+@media (max-width: 720px), (max-height: 520px) and (max-width: 1099.98px) {
+  /* three KPIs that always fit: no sideways scroll, nothing cut mid-word */
+  .thud-root.is-viewer .thud-status {
+    align-self: stretch;
+    overflow: hidden;
+    padding: 9px 6px 9px 12px;
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+  .thud-root.is-viewer .thud-status .thud-kpis {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+  }
+  .thud-root.is-viewer .thud-kpi,
+  .thud-root.is-viewer .thud-kpi:last-child,
+  .thud-root.is-viewer .thud-kpi[data-kpi="comfort"] { min-width: 0; padding: 0 10px; }
+  .thud-root.is-viewer .thud-status .thud-kpi:first-child { padding-left: 0; }
+  .thud-root.is-viewer .thud-kpi__v { font-size: 1.12rem; }
+  .thud-root.is-viewer .thud-kpi__s { overflow: hidden; text-overflow: ellipsis; }
+  .thud-root.is-viewer .thud-spark { display: none !important; }
+  .thud-root.is-viewer.is-expanded .thud-readings { display: block; order: 4; padding-top: 8px !important; border-top: 1px solid var(--twin-panel-border) !important; }
+  .thud-readings__list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 0; }
+  .thud-readings__list .thud-kpi { order: 0 !important; padding: 0 10px; border-left: 1px solid var(--twin-panel-border); }
+  .thud-readings__list .thud-kpi:first-child { padding-left: 2px; border-left: 0; }
+}
+@media (max-height: 520px) and (max-width: 1099.98px) {
+  .twin-viewer { --twv-bar: 48px; }
+  .twv-close { height: 36px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .twin-viewer,
+  .twin-viewer .twin__canvas-host canvas { transition: none; }
+  .twin__launch-btn { transition: none; }
+}

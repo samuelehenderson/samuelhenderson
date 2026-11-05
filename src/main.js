@@ -5,6 +5,7 @@ import './styles/scenes/dive.css';
 import './styles/scenes/gallery.css';
 import './styles/scenes/selected.css';
 import './styles/scenes/constellation.css';
+import './styles/scenes/twin.css';
 import './styles/scenes/contact.css';
 
 import { gsap } from 'gsap';
@@ -16,6 +17,7 @@ import { initDive } from './scenes/dive.js';
 import { initGallery } from './scenes/gallery.js';
 import { initConstellation } from './scenes/constellation.js';
 import { initDaylight } from './scenes/daylight.js';
+import { initTwin } from './scenes/twin.js';
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -50,6 +52,7 @@ initHero({ reducedMotion });
 initDive({ reducedMotion });
 initGallery({ reducedMotion, lenis });
 initConstellation({ reducedMotion });
+initTwin({ reducedMotion });
 initDaylight({ reducedMotion });
 
 // Route all in-page anchor clicks through Lenis so nav + skip link

@@ -52,9 +52,11 @@ const LEAD_TAIL = {
   reduced: 'Scroll on to take the controls.',
   fallback: 'Open this page in a WebGL-capable browser to run it live.',
   'save-data': 'Load the live model below to run it.',
+  mobile: 'On a laptop, scroll to build it and take the controls.',
 };
 
 const FALLBACK_COPY = {
+  mobile: 'This is the blueprint of the building. Open the page on a laptop or desktop to run the live 3D model.',
   webgl: "The live 3D model needs WebGL, which isn't available here, so this is the blueprint of the same building.",
   error: "The live 3D model couldn't start on this device, so this is the blueprint of the same building.",
   'save-data': 'Data Saver is on, so the live 3D model (three.js plus the simulation) hasn’t been downloaded. This is its blueprint.',
@@ -211,7 +213,7 @@ export function initTwin({ reducedMotion = false } = {}) {
     state = 'fallback';
     stage.classList.remove('is-loading', 'is-ready', 'is-exploring');
     stage.classList.add('is-fallback');
-    setLeadTail(reason === 'save-data' ? 'save-data' : 'fallback');
+    setLeadTail(reason === 'save-data' || reason === 'mobile' ? reason : 'fallback');
     // the section shrinks to one screen (twin.css): re-measure the triggers below it
     requestAnimationFrame(() => safe(() => ScrollTrigger.refresh()));
     if (app) safe(() => app.destroy());
@@ -260,6 +262,12 @@ export function initTwin({ reducedMotion = false } = {}) {
     }
     if (!force && navigator.connection?.saveData === true) {
       showFallback('save-data');
+      return;
+    }
+    // Phones: the full scene can stall scrolling on a phone, so for now they
+    // get the blueprint; a full-screen phone viewer is on the way.
+    if (!force && (coarsePointer || Math.min(window.innerWidth, window.innerHeight) < 640)) {
+      showFallback('mobile');
       return;
     }
 

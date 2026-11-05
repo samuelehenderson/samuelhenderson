@@ -68,6 +68,7 @@
   line-height: 1.6;
   max-width: 52ch;
   margin: 0;
+  text-wrap: pretty;
 }
 
 /* ── Project grid ── */

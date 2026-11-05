@@ -24,15 +24,19 @@ gsap.registerPlugin(ScrollTrigger);
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 // Smooth scroll — disabled under reduced-motion so we don't override
-// the user's preference. ScrollTrigger reads scroll position the same
-// either way; native scroll just feeds it directly.
+// the user's preference, and on touch-first devices (phones, tablets):
+// Lenis never smooths touch anyway, but it puts non-passive touch
+// listeners on the whole window, so every swipe has to wait for the main
+// thread — while the 3D twin is busy loading, the page can't scroll.
+// ScrollTrigger reads scroll position the same either way; native scroll
+// just feeds it directly.
+const touchFirst = window.matchMedia('(hover: none) and (pointer: coarse)').matches;
 let lenis = null;
-if (!reducedMotion) {
+if (!reducedMotion && !touchFirst) {
   lenis = new Lenis({
     duration: 1.1,
     easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
     smoothWheel: true,
-    smoothTouch: false, // native touch scroll feels better on phones
   });
 
   lenis.on('scroll', ScrollTrigger.update);

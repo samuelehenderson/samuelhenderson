@@ -1,0 +1,421 @@
+/* ─────────────────────────────────────────────────────────────
+   Scene 6 ── Contact / Daylight
+   Camera pulls back to the workshop, now lit by morning sun.
+   Five parallax layers echo Hero but re-lit warm. The contact
+   form lives on the desk as a handwritten paper note.
+   ───────────────────────────────────────────────────────────── */
+
+.scene--contact {
+  position: relative;
+  height: 200vh;
+  background:
+    linear-gradient(180deg, #5b7fb0 0%, #f4b46d 45%, #f8e5b9 65%, #0f1520 100%);
+}
+
+.contact__inner {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ── Parallax stage (5 layers echoing Hero, warm-lit) ── */
+.contact__stage {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.contact-layer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -30vh;
+  bottom: -30vh;
+  will-change: transform;
+}
+.contact-layer .layer-inner {
+  position: absolute;
+  inset: 0;
+  transform: translate3d(var(--mx, 0px), var(--my, 0px), 0);
+  will-change: transform;
+}
+.contact-layer svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Warm overlay wash to unify the room */
+.scene--contact::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 55% 30% at 72% 32%, rgba(255, 244, 200, 0.20), transparent 60%),
+    radial-gradient(ellipse 40% 25% at 20% 88%, rgba(80, 60, 30, 0.25), transparent 60%);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* ── Content grid — heading/lead on left, paper note on right ── */
+.contact__wrap {
+  position: relative;
+  z-index: 3;
+  height: 100vh;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-8);
+  align-items: center;
+  padding: var(--header-h) var(--gutter) var(--space-8);
+  max-width: var(--container-max);
+  margin: 0 auto;
+  pointer-events: none;
+}
+.contact__wrap > * { pointer-events: auto; }
+
+.contact__content {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  color: #2d1e0c;
+  text-shadow: 0 1px 2px rgba(255, 235, 190, 0.5);
+}
+/* Warm sun-spot wash behind the copy so text always reads regardless
+   of what parallax silhouette is landing behind it. */
+.contact__content::before {
+  content: "";
+  position: absolute;
+  inset: -2.5rem -4rem -2.5rem -3rem;
+  background:
+    radial-gradient(ellipse 85% 90% at 38% 50%, rgba(255, 244, 200, 0.62), transparent 72%);
+  border-radius: 24px;
+  z-index: -1;
+  pointer-events: none;
+}
+.contact__content > * { position: relative; }
+
+.contact__number {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-4);
+  font-family: var(--font-mono);
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: #6e4318;
+}
+.contact__number::before {
+  content: "";
+  width: 32px;
+  height: 1px;
+  background: #6e4318;
+}
+
+.contact__heading {
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 1.4rem + 2.4vw, 3.5rem);
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: var(--tracking-tight);
+  color: #1c1207;
+  margin: 0 0 var(--space-4);
+  max-width: 16ch;
+}
+.contact__heading em {
+  font-style: normal;
+  background: linear-gradient(120deg, #b0672a, #d38a3d);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.contact__lead {
+  color: #3d2a17;
+  font-size: var(--fs-body);
+  line-height: 1.6;
+  max-width: 44ch;
+  margin: 0 0 var(--space-6);
+}
+
+.contact__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.contact__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.65rem 1.25rem;
+  border: 1px solid rgba(60, 40, 15, 0.35);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 245, 218, 0.35);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  color: #2d1e0c;
+  text-decoration: none;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    background var(--dur-base) var(--ease-out),
+    border-color var(--dur-base) var(--ease-out);
+}
+.contact__btn:hover,
+.contact__btn:focus-visible {
+  transform: translateY(-2px);
+  background: rgba(255, 245, 218, 0.65);
+  border-color: #6e4318;
+  color: #1c1207;
+}
+.contact__btn--primary {
+  background: #2d1e0c;
+  color: #f8e5b9;
+  border-color: #2d1e0c;
+}
+.contact__btn--primary:hover,
+.contact__btn--primary:focus-visible {
+  background: #4b3620;
+  color: #fff4c8;
+  border-color: #4b3620;
+}
+
+/* ── The paper note (contact form) ── */
+.contact__note {
+  position: relative;
+  padding: var(--space-6);
+  background:
+    linear-gradient(180deg, #fbeecc 0%, #f2d99f 100%);
+  border-radius: 4px;
+  transform: rotate(-1.6deg);
+  box-shadow:
+    0 24px 60px rgba(30, 15, 5, 0.35),
+    0 6px 16px rgba(30, 15, 5, 0.28),
+    inset 0 0 40px rgba(150, 90, 40, 0.08);
+  color: #2d1e0c;
+  max-width: 480px;
+  justify-self: end;
+  width: 100%;
+}
+/* Ruled paper feel — subtle horizontal lines */
+.contact__note::before {
+  content: "";
+  position: absolute;
+  inset: 12px;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 33px,
+    rgba(102, 60, 20, 0.10) 34px
+  );
+  pointer-events: none;
+  border-radius: 2px;
+}
+/* Pinned-corner accent */
+.contact__note::after {
+  content: "";
+  position: absolute;
+  top: -6px;
+  left: 24px;
+  width: 46px;
+  height: 12px;
+  background: rgba(60, 40, 15, 0.32);
+  border-radius: 2px;
+  transform: rotate(-4deg);
+  box-shadow: 0 2px 4px rgba(30, 15, 5, 0.3);
+}
+
+.note__salutation {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: #2d1e0c;
+  margin: 0 0 var(--space-4);
+  position: relative;
+  z-index: 1;
+}
+
+.note-field {
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: var(--space-4);
+  position: relative;
+  z-index: 1;
+}
+.note-field label {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #6b4a2a;
+}
+.note-field input,
+.note-field textarea {
+  padding: 0.55rem 0.15rem;
+  border: 0;
+  border-bottom: 1px solid rgba(60, 40, 15, 0.35);
+  background: transparent;
+  color: #2d1e0c;
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  line-height: 1.4;
+  resize: vertical;
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+.note-field input::placeholder,
+.note-field textarea::placeholder {
+  color: rgba(60, 40, 15, 0.35);
+  font-style: italic;
+}
+.note-field input:focus,
+.note-field textarea:focus {
+  outline: none;
+  border-bottom-color: #b0672a;
+}
+
+.note__send {
+  padding: 0.7rem 1.4rem;
+  background: #2d1e0c;
+  color: #fff4c8;
+  border: 0;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+  position: relative;
+  z-index: 1;
+}
+.note__send:hover,
+.note__send:focus-visible {
+  background: #4b3620;
+  transform: translateY(-1px);
+}
+
+.note__signoff {
+  margin: var(--space-4) 0 0;
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 0.9rem;
+  color: #6b4a2a;
+  position: relative;
+  z-index: 1;
+}
+
+/* Disabled + sending state on the Send button */
+.note__send:disabled {
+  opacity: 0.6;
+  cursor: default;
+  transform: none;
+}
+
+/* Inline error banner — keeps the form editable, just flags the issue */
+.note__error {
+  margin: var(--space-3) 0 0;
+  padding: 0.65rem 0.9rem;
+  border-left: 2px solid #b0672a;
+  background: rgba(176, 103, 42, 0.08);
+  color: #6e4318;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  border-radius: 0 3px 3px 0;
+  position: relative;
+  z-index: 1;
+}
+
+/* Success state — form contents get replaced with the "note received" note */
+.contact__note.is-sent {
+  text-align: left;
+  min-height: 240px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.contact__note.is-sent .note__salutation {
+  font-size: 1.35rem;
+  margin-bottom: var(--space-3);
+}
+.note__body {
+  position: relative;
+  z-index: 1;
+  color: #3d2a17;
+  font-size: 0.98rem;
+  line-height: 1.6;
+  margin: 0 0 var(--space-4);
+}
+
+/* ── Footer signoff, bottom-center ── */
+.contact__footer {
+  position: absolute;
+  bottom: var(--space-4);
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  color: rgba(30, 15, 5, 0.55);
+  z-index: 4;
+  white-space: nowrap;
+}
+
+/* ── Mobile ── */
+@media (max-width: 900px) {
+  .scene--contact { height: auto; min-height: 100vh; }
+  .contact__inner {
+    position: relative;
+    height: auto;
+    min-height: 100vh;
+  }
+  .contact__wrap {
+    grid-template-columns: 1fr;
+    height: auto;
+    padding: calc(var(--header-h) + var(--space-5)) var(--gutter) var(--space-9);
+    gap: var(--space-7);
+  }
+  /* Fade the parallax stage down on mobile so it acts as a soft
+     backdrop, not something that competes with the text. */
+  .contact__stage { opacity: 0.55; }
+  /* Stronger sun-spot behind content on mobile — text sits over a
+     stacked stage in the narrow layout. */
+  .contact__content::before {
+    inset: -1.5rem -1.5rem -1.5rem -1.5rem;
+    background:
+      radial-gradient(ellipse 110% 100% at 50% 50%, rgba(255, 244, 200, 0.85), rgba(255, 244, 200, 0.35) 65%, transparent 90%);
+  }
+  .contact__note {
+    transform: rotate(-1deg);
+    justify-self: stretch;
+    max-width: 100%;
+  }
+  .contact__footer {
+    position: static;
+    transform: none;
+    text-align: center;
+    display: block;
+    margin: var(--space-6) auto 0;
+    padding-bottom: var(--space-4);
+  }
+}
+
+@media (max-width: 720px) {
+  [data-contact-mobile-hide] { display: none !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .contact-layer, .contact-layer .layer-inner { transform: none !important; }
+  .contact__note { transform: none; }
+}

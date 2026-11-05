@@ -7,8 +7,9 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger';
  * Sticky stage, vertical scroll. Three tiers of stars parallax at
  * different rates: tier 1 (primary skills) drifts up fastest as if
  * passing close to camera; tier 3 (supporting) barely moves. The
- * heading fades as the camera "passes through" the constellation;
- * a closing line lands at the bottom.
+ * heading fades as the camera "passes through" the field; a closing
+ * line lands at the bottom. Constellation wires between the four
+ * tier-1 stars fade in on scene entry (staggered).
  */
 export function initConstellation({ reducedMotion }) {
   const scene = document.querySelector('[data-scene="constellation"]');
@@ -20,9 +21,26 @@ export function initConstellation({ reducedMotion }) {
   const t2 = scene.querySelectorAll('.star--t2');
   const t3 = scene.querySelectorAll('.star--t3');
   const lines   = scene.querySelector('.constellation__lines');
+  const lineEls = scene.querySelectorAll('.constellation__lines line');
   const content = scene.querySelector('.constellation__content');
   const closing = scene.querySelector('.constellation__closing');
 
+  // Wires draw-in on entry (staggered opacity)
+  if (lineEls.length) {
+    gsap.from(lineEls, {
+      opacity: 0,
+      duration: 1.1,
+      ease: 'power2.out',
+      stagger: 0.14,
+      scrollTrigger: {
+        trigger: scene,
+        start: 'top 70%',
+        once: true,
+      },
+    });
+  }
+
+  // Per-tier parallax on scroll — foreground moves fastest, background slowest.
   const tl = gsap.timeline({
     scrollTrigger: {
       trigger: scene,
@@ -34,11 +52,10 @@ export function initConstellation({ reducedMotion }) {
     defaults: { ease: 'none' },
   });
 
-  // Per-tier parallax — foreground moves fastest, background slowest.
-  tl.to(t3, { y: () => -window.innerHeight * 0.30, duration: 1 }, 0)
-    .to(t2, { y: () => -window.innerHeight * 0.70, duration: 1 }, 0)
+  tl.to(t3, { y: () => -window.innerHeight * 0.22, duration: 1 }, 0)
+    .to(t2, { y: () => -window.innerHeight * 0.55, duration: 1 }, 0)
     .to([t1, lines].filter(Boolean), {
-      y: () => -window.innerHeight * 1.40,
+      y: () => -window.innerHeight * 1.05,
       duration: 1,
     }, 0);
 

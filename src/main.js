@@ -32,16 +32,15 @@ if (!reducedMotion) {
     duration: 1.1,
     easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
     smoothWheel: true,
-    smoothTouch: false, // native touch scroll feels better on phones
+    // Touch stays native (syncTouch defaults to false): it feels better on phones.
   });
 
   lenis.on('scroll', ScrollTrigger.update);
 
-  const raf = (time) => {
-    lenis.raf(time);
-    requestAnimationFrame(raf);
-  };
-  requestAnimationFrame(raf);
+  // One clock for Lenis, ScrollTrigger and every tween (the gallery's
+  // slides included), so smooth scroll and animation never drift apart.
+  gsap.ticker.add((time) => lenis.raf(time * 1000));
+  gsap.ticker.lagSmoothing(0);
 
   // Expose for debugging during development
   if (import.meta.env.DEV) window.__lenis = lenis;

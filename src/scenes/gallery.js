@@ -33,11 +33,12 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger';
  * coming in from outside is landed on the first room it meets; a gesture
  * going out past an end station turns back into plain scrolling. A wheel
  * kept spinning walks on, room by room, straight through the corner, at
- * an even speed — about the wheel's — and stops about where the wheel
- * has taken it. Links and hash loads to the gallery land on its first
- * room, and a link's glide is never taken over on the way. Content
- * reveals once per room on arrival — time-based, never tied to scroll,
- * so text is never ghosted.
+ * an even speed — about the wheel's, a little behind it — and stops on
+ * the room nearest where the wheel has taken it that it can still slow
+ * down onto (never past it and back). Links and hash loads to the
+ * gallery land on its first room, and a link's glide is never taken over
+ * on the way. Content reveals once per room on arrival — time-based,
+ * never tied to scroll, so text is never ghosted.
  *
  * Under prefers-reduced-motion the page keeps the vertical stack.
  */
@@ -58,6 +59,36 @@ const settleEase = (t, m0) =>
   m0 * t + (10 - 6 * m0) * t ** 3 + (8 * m0 - 15) * t ** 4 + (6 - 3 * m0) * t ** 5;
 const MAX_M0 = 2;
 const MIN_M0 = -1.5;
+
+// A wheel kept turning (a 'walk'): over dist px the page eases from the
+// speed it has (v0) to the cruise speed vc — in at most a short moment, at
+// no more than WALK_ACC — holds it, and only over its last moment (about a
+// third of a second, a little longer from speed) slows onto the station (at
+// rest, with no jolt at either end). The walk is re-planned at every notch,
+// so while the wheel turns it never gets that far. null: too short for it
+// (the caller lands instead).
+const WALK_ACC = 2500;
+function walkCurve(dist, v0, vc) {
+  v0 = Math.max(0, v0);
+  if (!(vc > 0) || !(dist > 0)) return null;
+  const tA = clamp((2 * Math.abs(vc - v0)) / WALK_ACC, 0.08, 0.6);
+  const dA = tA * (v0 + (2 * (vc - v0)) / 3);
+  const tC = clamp(0.18 + vc / 4000, 0.26, 0.45);
+  const dC = (vc * tC) / 2;
+  const dB = dist - dA - dC;
+  if (dB < 0) return null;
+  const tB = dB / vc;
+  const T = tA + tB + tC;
+  const ease = (u) => {
+    const t = u * T;
+    let x;
+    if (t <= tA) { const w = t / tA; x = v0 * t + (vc - v0) * tA * (w * w - (w * w * w) / 3); }
+    else if (t <= tA + tB) x = dA + vc * (t - tA);
+    else { const w = Math.min(1, (t - tA - tB) / tC); x = dA + dB + vc * tC * (w - w * w * w + (w * w * w * w) / 2); }
+    return x / dist;
+  };
+  return { T, ease, tStop: tA + tB };
+}
 // the curve's top speed, as a multiple of distance / duration
 const peakOf = (m0) => {
   let p = 0;
@@ -431,6 +462,8 @@ export function initGallery({ reducedMotion, lenis }) {
       e.preventDefault();
       e.stopImmediatePropagation();
       steer.cancel();
+      // (from where the page really is: Lenis may not have seen a jump)
+      if (steer.sync) steer.sync();
       const y = restOf(0);
       if (lenis) lenis.scrollTo(y, { duration: 1.6, easing: (t) => 1 - Math.pow(1 - t, 3), force: true });
       else window.scrollTo({ top: y, behavior: 'smooth' });
@@ -458,8 +491,9 @@ export function initGallery({ reducedMotion, lenis }) {
    starts at the speed the page already has (read from Lenis' own running
    ease), so taking over from Lenis, handing back to it, and changing a
    glide's destination are all seamless. A wheel kept turning walks on
-   from room to room — straight on from the corner too — at about the speed
-   it is turned; a deliberate tick once the page rests always moves. */
+   from room to room — straight on from the corner too, and a slow one in
+   through the corner at its own pace — at about the speed it is turned; a
+   deliberate tick once the page rests, or while it lands, always moves. */
 function wheelSteer(lenis, C) {
   const { N } = C;
   const GAP_NOTCH = 420;      // ms between wheel notches that starts a new gesture (a turning wheel is uneven)
@@ -468,6 +502,7 @@ function wheelSteer(lenis, C) {
   const QUIET_NATIVE = 220;   // the same after native scrolling (scrollbar, find, focus)
   const LANDING = 150;        // ms before a glide lands from which a deliberate tick moves on
   const TICK_GAP = 200;       // ms since the last notch that makes a tick deliberate (not a spin)
+  const SPIN_GAP = 230;       // … after a spin that has carried the page along (see spinGap)
   const dur = lenis.options.duration || 1;
   const ease = lenis.options.easing;
   const slope0 = typeof ease === 'function' ? Math.max(1, (ease(0.002) - ease(0)) / 0.002) : 6.9;
@@ -506,10 +541,11 @@ function wheelSteer(lenis, C) {
   const note = (...a) => { if (log) log.push([Math.round(now()), ...a]); };
 
   // cap: the most speed (px/s) the glide may build up on the way (0: none).
-  // cruise (a wheel kept turning, 'walk'): the speed to pan at — the glide
-  // starts at the speed the page has, eases towards cruise and holds it,
-  // and only near its far end slows down; it is re-aimed one station on
-  // long before that while the wheel turns.
+  // cruise (a wheel kept turning, 'walk'): the speed to pan at — the page
+  // eases to it from the speed it has, holds it, and only slows onto the
+  // station at the very end (walkCurve); a walk too near its station for
+  // that, and a walk's landing ('land'), slow down from the speed the page
+  // has, without speeding up first.
   function plan(idx, kind, seed = 0, cap = 0, cruise = 0) {
     const to = C.stations()[idx];
     const P = lenis.animatedScroll;
@@ -519,33 +555,43 @@ function wheelSteer(lenis, C) {
     const dir = Math.sign(X);
     let v = velocity() * dir;
     if (seed > v) v = seed; // a wheel notch's own kick, as Lenis would give it
-    let T = C.slideT(dist);
-    // Landing a page that comes in from outside: one long, smooth
-    // deceleration from the speed it has (no speeding up, no stop short).
-    if (kind === 'capture' && v > 0) T = clamp((MAX_M0 * dist) / v, T, Math.max(T, 0.85));
-    // a walk: average dist / T = cruise / 1.6, so the curve (flat at its
-    // start for m0 = 1.6) tops out at about cruise from any starting speed
-    if (cruise > 0) T = clamp((1.6 * dist) / cruise, 0.45, 5);
-    let m0 = (v * T) / dist;
-    if (m0 > MAX_M0) { T = Math.max(0.18, (MAX_M0 * dist) / v); m0 = Math.min(MAX_M0, (v * T) / dist); }
-    m0 = Math.max(MIN_M0, m0);
-    // capped: take longer rather than speed up past it
-    for (let k = 0; cap > 0 && !cruise && k < 4; k++) {
-      const peak = (peakOf(m0) * dist) / T;
-      if (peak <= cap * 1.02 || T >= 2.4) break;
-      T = Math.min(2.4, (T * peak) / cap);
-      m0 = clamp((v * T) / dist, MIN_M0, MAX_M0);
+    const walk = cruise > 0 ? walkCurve(dist, v, cruise) : null;
+    let T;
+    let m0 = 0;
+    let easing;
+    if (walk) {
+      T = walk.T;
+      easing = walk.ease;
+    } else {
+      T = C.slideT(dist);
+      // Landing a page that comes in from outside: one long, smooth
+      // deceleration from the speed it has (no speeding up, no stop short).
+      if (kind === 'capture' && v > 0) T = clamp((MAX_M0 * dist) / v, T, Math.max(T, 0.85));
+      if ((kind === 'land' || cruise > 0) && v > 0) T = clamp((MAX_M0 * dist) / v, 0.18, Math.max(1.3, T));
+      m0 = (v * T) / dist;
+      if (m0 > MAX_M0) { T = Math.max(0.18, (MAX_M0 * dist) / v); m0 = Math.min(MAX_M0, (v * T) / dist); }
+      m0 = Math.max(MIN_M0, m0);
+      // capped: take longer rather than speed up past it
+      for (let k = 0; cap > 0 && k < 4; k++) {
+        const peak = (peakOf(m0) * dist) / T;
+        if (peak <= cap * 1.02 || T >= 2.4) break;
+        T = Math.min(2.4, (T * peak) / cap);
+        m0 = clamp((v * T) / dist, MIN_M0, MAX_M0);
+      }
+      const k0 = m0;
+      easing = (u) => settleEase(u, k0);
     }
     const t0 = now();
     // g: the gesture that called it — the rest of that gesture belongs to
     // this glide even after it has landed (one gesture, one station).
-    const me = { idx, to, dir, kind, soft: C.isSoft(idx), t0, T, X, P0: P, v0: Math.max(0, v), tEnd: t0 + T * 1000, absorbed: 0, g: g ? g.id : 0, done: false };
-    note('plan', kind, idx, Math.round(P), Math.round(v), +T.toFixed(3), +m0.toFixed(2));
+    // tStop: when it starts slowing down onto its station.
+    const me = { idx, to, dir, kind, soft: C.isSoft(idx), t0, T, X, P0: P, v0: Math.max(0, v), tEnd: t0 + T * 1000, tStop: walk ? t0 + walk.tStop * 1000 : t0, absorbed: 0, g: g ? g.id : 0, done: false };
+    note('plan', kind, idx, Math.round(P), Math.round(v), +T.toFixed(3), walk ? `c${Math.round(cruise)}` : +m0.toFixed(2));
     glide = me;
     lenis.targetScroll = P; // never equal to `to`, so Lenis always runs the ease
     lenis.scrollTo(to, {
       duration: T,
-      easing: (u) => settleEase(u, m0),
+      easing,
       force: true,
       onComplete: () => { me.done = true; },
     });
@@ -558,6 +604,17 @@ function wheelSteer(lenis, C) {
   // ease keeps targetScroll on the current value; a wheel ease aims it at
   // the ease's end.
   const scripted = () => lenis.animate.isRunning && !running() && Math.abs(lenis.targetScroll - lenis.animate.to) > 0.5;
+
+  // A native jump (a key, a script) that lands just as a Lenis glide ends
+  // is taken by Lenis for its own last frame and skipped: it would go on
+  // from where it thinks the page is (and a link to where it thinks it
+  // already is would do nothing). Catch up with the page first.
+  function sync() {
+    if (lenis.animate.isRunning || Math.abs(lenis.actualScroll - lenis.animatedScroll) <= 1) return false;
+    note('sync', Math.round(lenis.animatedScroll), Math.round(lenis.actualScroll));
+    lenis.animatedScroll = lenis.targetScroll = lenis.actualScroll;
+    return true;
+  }
 
   // Back to plain Lenis scrolling, at the speed the page has now: Lenis'
   // next ease (this very event) starts from this target.
@@ -572,6 +629,15 @@ function wheelSteer(lenis, C) {
     let s = 0;
     for (const [ti, a] of g.ev) if (ti > t - win) s += a;
     return s / (win / 1000);
+  }
+  // The wheel's pace (px/s): its deltas over the last 0.7 s over the time
+  // they took — steady for a steady wheel, whatever the phase of its notches.
+  function pace(t) {
+    const ev = g.ev.filter((e) => e[0] > t - 700);
+    if (ev.length < 3) return rate(t);
+    let s = 0;
+    for (let j = 1; j < ev.length; j++) s += ev[j][1];
+    return (s / Math.max(16, ev[ev.length - 1][0] - ev[0][0])) * 1000;
   }
   // A wheel still turning steadily (not a trackpad's decaying tail).
   const sustained = (t) => !!g && g.n >= 3 && t - g.last < 200 && rate(t) >= Math.max(250, 0.4 * g.peakRate);
@@ -591,49 +657,80 @@ function wheelSteer(lenis, C) {
   }
   const kick = (ad) => ad / CARRY;
 
+  // A glide the wheel keeps pushing turns into a walk: a capture once it is
+  // well on its way to the first room, a push (a notch, a key) around its
+  // fastest point.
   function walkDue(t) {
     if (!sustained(t)) return false;
-    // Landed, and the wheel still turning in its rhythm: walk on from here,
-    // at its pace (never a dead notch, never a full-speed slide).
-    if (glide.done) return true;
-    // A wheel still turning steadily half-way through the landing on the
-    // first room (a capture) is not stopping there: carry straight on to
-    // the next, from the speed the page has — no rest at the corner, no
-    // input swallowed. (One that stops turning by then lands on it.)
     if (glide.kind === 'capture') return glide.absorbed >= 0.25 * C.G.D && t >= glide.t0 + 0.5 * glide.T * 1000;
-    // Walking: re-aimed one station on while the glide still holds its
-    // speed (before half of it is covered), so it never slows for a room —
-    // but never more than one station past where the wheel has taken it.
-    if (glide.kind === 'walk') {
-      if ((lenis.animatedScroll - glide.P0) * glide.dir < 0.42 * Math.abs(glide.X)) return false;
-      const lim = C.atOrAfter(wheelTarget(), glide.dir);
-      return lim == null || (glide.idx - lim) * glide.dir <= 0;
-    }
-    // A glide from one push (a notch, a key) that the wheel keeps pushing
-    // turns into a walk around its fastest point.
+    // (a tick that came after a spin, and the wheel turning on in its
+    // rhythm right after: it was the spin going on — walk on at its pace)
+    if (glide.spun) return true;
     return glide.absorbed >= 0.3 * C.G.D && t >= glide.t0 + 0.4 * glide.T * 1000;
   }
+  // A slow, steady spin (a notch every 140 ms or more): coming in from
+  // outside it walks — through the corner at its own pace, on into the rooms
+  // or onto the first one, as the wheel decides — rather than slowing for
+  // the first room before it knows whether the wheel stops there.
+  const slowSpin = (t) => !!g && g.n >= 4 && g.peakD >= 40 && sustained(t) && rhythm() >= 140;
   // Where the wheel has taken the page: the gesture's start plus every
   // delta of it (what plain scrolling would do).
   const wheelTarget = () => (g ? g.anchor + g.dir * g.sum : lenis.animatedScroll);
+  // how far past a station the wheel must have taken the page before a walk
+  // heads on beyond it (about half a notch)
+  const pass = () => clamp(0.04 * C.G.D, 40, 80);
+  // the walk's lag behind the wheel, in seconds of its pace
+  const LAG = 0.55;
   // A wheel kept turning pans the rooms at about the speed it is turned
-  // (from the corner on, one continuous move). Once walking, the page
-  // drops a little behind where the wheel has taken it — about the room it
+  // (from the corner on, one continuous move), with the page a little
+  // behind where the wheel has taken it — about half a second, the room it
   // needs to slow down smoothly, so that when the wheel stops it can land
-  // there: a little faster while further behind, slower while closer or
-  // ahead. The glide eases towards that speed (never more than a gentle
-  // slowing).
+  // there: a little faster while further behind, slower while closer. The
+  // lag builds up gently from what it was when the walk began.
   function walkSpeed(t) {
-    const r = rate(t);
-    if (!g.walk) g.walk = t;
-    const behind = (wheelTarget() - lenis.animatedScroll) * glide.dir;
-    const want = 0.5 * r * clamp((t - g.walk) / 700, 0, 1);
-    return clamp(r + 0.8 * (behind - want), 300, 4000);
+    const r = pace(t);
+    const behind = (wheelTarget() - lenis.animatedScroll) * g.dir;
+    const w = g.walk || (g.walk = { t0: t, from: clamp(behind, 0, LAG * r) });
+    const want = w.from + (LAG * r - w.from) * clamp((t - w.t0) / 800, 0, 1);
+    return clamp(r + behind - want, Math.max(150, 0.45 * r), 2.5 * r + 200);
   }
-  // The wheel has stopped turning mid-walk: land on the first station far
-  // enough ahead to slow down smoothly from the speed the page has.
-  // stopped: no input for 1.6 x the wheel's own rhythm (its typical gap
-  // between events this gesture)
+  // Walking: heads for the first station the wheel has not yet taken the
+  // page clearly past (never one at or behind the page, nor short of
+  // minIdx), at about the wheel's pace — re-planned at every notch, so the
+  // speed follows the wheel and the page never slows for a room the wheel
+  // is turning on past. false: walked out past an end station — plain
+  // scrolling again (this event is Lenis').
+  function walkOn(t, minIdx = null) {
+    const S = C.stations();
+    const P = lenis.animatedScroll;
+    const dir = g.dir;
+    const Y = wheelTarget();
+    let i = glide && glide.dir === dir ? glide.idx : C.after(P, dir);
+    if (i != null && minIdx != null && (minIdx - i) * dir > 0) i = minIdx;
+    while (i != null && i >= 0 && i <= N + 1 && ((S[i] - P) * dir < 1.5 || (Y - S[i]) * dir >= pass())) i += dir;
+    if (i == null || i < 0 || i > N + 1) { release(); return false; }
+    // (a trackpad's stream of small deltas: re-planned a few times a second)
+    if (running() && glide.kind === 'walk' && glide.idx === i && t - glide.t0 < 60) return true;
+    // (slowing by no more than a tenth at a time — unless the page is going
+    // well over the wheel's pace: the lag is kept gently)
+    plan(i, 'walk', 0, 0, Math.max(walkSpeed(t), Math.min(0.9 * Math.abs(velocity()), 0.8 * pace(t))));
+    return true;
+  }
+  // The wheel starts walking. from 'push': a glide that has already moved
+  // the page a station on for the wheel's first notch (one tick, one room),
+  // so where the wheel has taken it counts from where the page is heading.
+  function startWalk(t, minIdx, from) {
+    const r = pace(t);
+    let behind = (wheelTarget() - lenis.animatedScroll) * g.dir;
+    if (from === 'push' && behind < LAG * r) { g.anchor += g.dir * (LAG * r - behind); behind = LAG * r; }
+    g.walk = { t0: t, from: clamp(behind, 0, LAG * r) };
+    return walkOn(t, minIdx);
+  }
+  // The wheel has stopped turning mid-walk (no input for 1.4 x its own
+  // rhythm — its typical gap between events this gesture): land on the
+  // station nearest where the wheel has taken the page, of those still far
+  // enough ahead to slow down onto smoothly. A notch that comes after all
+  // walks straight on again (walkOn), from the speed the page has.
   const rhythm = () => {
     if (!g || g.ev.length < 3) return 0;
     const gaps = [];
@@ -641,13 +738,20 @@ function wheelSteer(lenis, C) {
     gaps.sort((a, b) => a - b);
     return gaps[gaps.length >> 1];
   };
-  const stopAfter = () => (rhythm() ? clamp(1.6 * rhythm(), 140, 300) : 260);
+  const stopAfter = () => (rhythm() ? clamp(1.4 * rhythm(), 80, 300) : 260);
   // The longest pause between notches that is still one turning wheel, not
   // a deliberate tick: TICK_GAP — or, for a wheel turning faster than a
   // notch per TICK_GAP, up to 1.5 x its own rhythm (a slow spin is uneven).
   const tickGap = () => {
     const r = rhythm();
     return g && g.ev.length >= 4 && r > 0 && r < TICK_GAP ? clamp(1.5 * r, TICK_GAP, 260) : TICK_GAP;
+  };
+  // … and for a glide the wheel itself drives (a capture, a walk, its
+  // landing): any pause short of the one that ends a walk — and never one
+  // under SPIN_GAP (a hiccup in a fast spin is not a deliberate tick).
+  const spinGap = () => {
+    const r = rhythm();
+    return g && g.ev.length >= 4 && r > 0 ? clamp(1.4 * r, SPIN_GAP, 360) : TICK_GAP;
   };
   let walkTimer = 0;
   function walkStop() {
@@ -659,18 +763,22 @@ function wheelSteer(lenis, C) {
     const P = lenis.animatedScroll;
     const S = C.stations();
     const Y = wheelTarget();
-    // of the stations ahead far enough to slow down smoothly, the one
-    // nearest where the wheel has taken the page
-    let best = null;
-    for (let i = C.after(P, glide.dir); i != null && (i - glide.idx) * glide.dir <= 0; i += glide.dir) {
-      // (about the distance plain scrolling coasts on when a wheel stops)
-      if ((S[i] - P) * glide.dir < Math.max(60, 0.16 * v)) continue;
-      if (best == null || Math.abs(S[i] - Y) < Math.abs(S[best] - Y)) best = i;
-    }
-    if (best == null) return;
-    // (the walk's own curve already lands there, unless it would take long)
-    if (best === glide.idx && glide.tEnd - now() < 1400) return;
-    plan(best, 'land', 0, Math.max(300, v * 1.3, 0.9 * g.peakRate));
+    const dir = glide.dir;
+    // The walk heads for the first station the wheel has not passed; the
+    // one before it (which it has only just passed) when that is nearer
+    // where the wheel has taken the page and still far enough ahead (about
+    // the distance plain scrolling coasts on when a wheel stops) — never a
+    // corner's outer end, though: a page that came in lands on a room.
+    // (a firmer stop rather than carrying on half a room or more past it)
+    const prev = glide.idx - dir;
+    let best = glide.idx;
+    const room = (S[best] - Y) * dir > 0.5 * C.G.D ? Math.max(30, 0.06 * v) : Math.max(50, 0.11 * v);
+    if (prev >= 0 && prev <= N + 1 && !C.isSoft(prev) && (S[prev] - P) * dir >= room && Math.abs(S[prev] - Y) < Math.abs(S[best] - Y)) best = prev;
+    // (the walk's own curve already lands there, about now: it is landing)
+    if (best === glide.idx && glide.tStop - now() < 350) { glide.kind = 'land'; note('stop', best); return; }
+    // a station still a long way off is reached as a slide would (at no
+    // more than 2.5 x the walk's speed), not crept onto
+    plan(best, 'land', 0, Math.max(300, v * 2.5, 0.9 * g.peakRate));
   }
 
   function absorb(event) {
@@ -680,21 +788,37 @@ function wheelSteer(lenis, C) {
 
   function onWheel({ deltaY: d, event }) {
     if (!event || event.type !== 'wheel' || event.ctrlKey || !d || lenis.isStopped || C.refreshing) return true;
+    sync();
     const t = now();
     const dir = Math.sign(d);
     const ad = Math.abs(d);
     const P = lenis.animatedScroll;
     const gap = ad >= 40 ? GAP_NOTCH : GAP_PAD;
     // A wheel notch (as big as any in its gesture: not a trackpad's tail)
-    // once the page has come to rest on a station — or is just landing on
-    // it, after a deliberate pause — is a new push: every such tick moves.
+    // once the page has come to rest on a station — or is landing on it,
+    // after a deliberate pause — is a new push: every such tick moves.
     const notch = ad >= 40 && (!g || ad >= 0.6 * g.peakD);
     // in rhythm with a wheel that is still turning (a slow wheel's notches
     // come a little further apart, and unevenly): not a deliberate tick
-    const spin = !!g && g.n >= 3 && t - g.last <= tickGap() && rate(t) + ad / 0.45 >= Math.max(250, 0.4 * g.peakRate);
-    const landed = !!glide && !spin && (glide.done || (t >= glide.tEnd - LANDING && !!g && t - g.last > TICK_GAP));
-    const fresh = !g || t - g.last > gap || dir !== g.dir || swipeAgain(ad) || (notch && landed);
-    if (fresh) { g = { id: ++gid, dir, n: 0, last: t, ev: [], peakD: 0, peakRate: 0, anchor: P, sum: 0 }; note('gesture', dir, ad, Math.round(P)); }
+    const driven = !!glide && (glide.kind === 'capture' || glide.kind === 'walk' || glide.kind === 'land');
+    const spin = !!g && g.n >= 3 && t - g.last <= (driven ? spinGap() : tickGap()) && rate(t) + ad / 0.45 >= Math.max(250, 0.4 * g.peakRate);
+    // landing: at rest, a walk's landing, the end of a glide, or the second
+    // half of a capture (one long deceleration onto the first room)
+    const landing = !!glide && (glide.done || glide.kind === 'land' || t >= glide.tEnd - LANDING || (glide.kind === 'capture' && t >= glide.t0 + 0.5 * glide.T * 1000));
+    const landed = landing && !spin && (glide.done || (!!g && t - g.last > TICK_GAP));
+    // (input that keeps a walk going is just more of the same gesture)
+    const walking = !!glide && glide.kind === 'walk' && running();
+    const fresh = !g || t - g.last > gap || dir !== g.dir || (!walking && swipeAgain(ad)) || (notch && landed);
+    // the pace of the spin a fresh push comes after (see below)
+    const spun = fresh && driven && g && g.ev.length >= 3 && dir === g.dir ? pace(t) : 0;
+    if (fresh) {
+      // (after a spin the new push keeps the spin's rhythm and where it has
+      // taken the page: if the wheel turns on, it is the same spin)
+      const was = g;
+      g = { id: ++gid, dir, n: 0, last: t, ev: [], peakD: 0, peakRate: 0, anchor: P, sum: 0 };
+      if (spun) Object.assign(g, { n: was.n, ev: was.ev.slice(), peakD: was.peakD, peakRate: was.peakRate, anchor: was.anchor + was.dir * was.sum });
+      note('gesture', dir, ad, Math.round(P));
+    }
     g.n += 1;
     g.sum += ad;
     g.last = t;
@@ -722,17 +846,29 @@ function wheelSteer(lenis, C) {
         return absorb(event);
       }
       glide.absorbed += ad;
-      // leaving: a push that carries on past an end station is plain scrolling
-      if (glide.soft && glide.absorbed >= Math.max(120, 0.6 * Math.abs(glide.X))) { release(); return true; }
+      // leaving: a push that carries on past an end station is plain
+      // scrolling (a walk leaves once the wheel has taken it past one)
+      if (glide.soft && glide.kind !== 'walk' && glide.absorbed >= Math.max(120, 0.6 * Math.abs(glide.X))) { release(); return true; }
       const prog = (t - glide.t0) / (glide.T * 1000);
-      // a new push once a glide is well under way: one more room
-      if (fresh ? prog >= 0.5 : walkDue(t)) {
-        const i = glide.idx + dir;
-        if (i < 0 || i > N + 1) { release(); return true; }
-        if (fresh) plan(i, 'slide');
-        else plan(i, 'walk', 0, 0, walkSpeed(t));
-      } else if (fresh) {
-        glide.g = g.id; // a second push right on top of the first: one move
+      if (fresh) {
+        // a new push once a glide is well under way, or as it lands: one
+        // more room; one right on top of the first is the same move
+        if (landed || prog >= 0.5) {
+          const i = glide.idx + dir;
+          if (i < 0 || i > N + 1) { release(); return true; }
+          // (no faster than a push from rest moves a room; after a spin, at
+          // about the spin's pace — and walking on with it if it goes on)
+          plan(i, 'slide', 0, spun ? clamp(3 * spun, 1500, 2 * C.G.D) : 2 * C.G.D);
+          if (glide && spun) glide.spun = true;
+        } else glide.g = g.id;
+      } else if (glide.kind === 'walk' || (glide.kind === 'land' && sustained(t))) {
+        // still turning (or turning again just as it began to land): walk on
+        if (!walkOn(t)) return true;
+      } else if (glide.done ? sustained(t) : walkDue(t)) {
+        // a glide the wheel keeps pushing — or, landed, the wheel still
+        // turning in its rhythm: walk on past its station, at its pace
+        // (never a dead notch, never a full-speed slide)
+        if (!startWalk(t, glide.spun ? glide.idx : glide.idx + dir, glide.kind === 'capture' || glide.spun ? 'capture' : 'push')) return true;
       }
       if (glide && glide.kind === 'walk') { clearTimeout(walkTimer); walkTimer = setTimeout(walkStop, stopAfter()); }
       return absorb(event);
@@ -749,8 +885,15 @@ function wheelSteer(lenis, C) {
       return absorb(event);
     }
     // Coming in from outside: once Lenis would carry the page into the
-    // corner, land it on the first room it meets, from the speed it has.
+    // corner, land it on the first room it meets, from the speed it has —
+    // or, for a slow spin, walk in at its pace.
     if ((dir > 0 && P < S[0] && I >= S[0]) || (dir < 0 && P > S[N + 1] && I <= S[N + 1])) {
+      if (slowSpin(t)) {
+        if (!startWalk(t, dir > 0 ? 1 : N, 'capture')) return true;
+        clearTimeout(walkTimer);
+        walkTimer = setTimeout(walkStop, stopAfter());
+        return absorb(event);
+      }
       plan(dir > 0 ? 1 : N, 'capture');
       return absorb(event);
     }
@@ -768,6 +911,14 @@ function wheelSteer(lenis, C) {
     if (hist.length > 8) hist.shift();
     if (lenis.isScrolling === 'native' && !running()) { glide = null; lastInput = t; arm(QUIET_NATIVE); }
   });
+  // (Lenis' own scroll listener runs first: this only acts on a jump it skipped)
+  window.addEventListener('scroll', () => {
+    if (!sync()) return;
+    glide = null;
+    lenis.emit();
+    lastInput = now();
+    arm(QUIET_NATIVE);
+  }, { passive: true });
 
   function arm(ms) { clearTimeout(timer); timer = setTimeout(onQuiet, ms); }
   function onQuiet() {
@@ -804,8 +955,9 @@ function wheelSteer(lenis, C) {
   }
 
   return {
-    goTo: (i) => plan(i, 'key'),
+    goTo: (i) => { sync(); plan(i, 'key'); },
     step(dir) {
+      sync();
       const base = running() ? glide.to : lenis.animatedScroll;
       if (!C.inside(base)) return false;
       const i = C.after(base, dir);
@@ -816,6 +968,7 @@ function wheelSteer(lenis, C) {
     cancel,
     target: () => (running() ? glide.to : null),
     scripted: () => (scripted() ? lenis.animate.to : null),
+    sync,
   };
 }
 

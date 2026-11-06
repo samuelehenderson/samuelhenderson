@@ -593,6 +593,9 @@ function wheelSteer(lenis, C) {
 
   function walkDue(t) {
     if (!sustained(t)) return false;
+    // Landed, and the wheel still turning in its rhythm: walk on from here,
+    // at its pace (never a dead notch, never a full-speed slide).
+    if (glide.done) return true;
     // A wheel still turning steadily half-way through the landing on the
     // first room (a capture) is not stopping there: carry straight on to
     // the next, from the speed the page has — no rest at the corner, no
@@ -631,12 +634,20 @@ function wheelSteer(lenis, C) {
   // enough ahead to slow down smoothly from the speed the page has.
   // stopped: no input for 1.6 x the wheel's own rhythm (its typical gap
   // between events this gesture)
-  const stopAfter = () => {
-    if (!g || g.ev.length < 3) return 260;
+  const rhythm = () => {
+    if (!g || g.ev.length < 3) return 0;
     const gaps = [];
     for (let j = 1; j < g.ev.length; j++) gaps.push(g.ev[j][0] - g.ev[j - 1][0]);
     gaps.sort((a, b) => a - b);
-    return clamp(1.6 * gaps[gaps.length >> 1], 140, 300);
+    return gaps[gaps.length >> 1];
+  };
+  const stopAfter = () => (rhythm() ? clamp(1.6 * rhythm(), 140, 300) : 260);
+  // The longest pause between notches that is still one turning wheel, not
+  // a deliberate tick: TICK_GAP — or, for a wheel turning faster than a
+  // notch per TICK_GAP, up to 1.5 x its own rhythm (a slow spin is uneven).
+  const tickGap = () => {
+    const r = rhythm();
+    return g && g.ev.length >= 4 && r > 0 && r < TICK_GAP ? clamp(1.5 * r, TICK_GAP, 260) : TICK_GAP;
   };
   let walkTimer = 0;
   function walkStop() {
@@ -678,7 +689,10 @@ function wheelSteer(lenis, C) {
     // once the page has come to rest on a station — or is just landing on
     // it, after a deliberate pause — is a new push: every such tick moves.
     const notch = ad >= 40 && (!g || ad >= 0.6 * g.peakD);
-    const landed = !!glide && (glide.done || (t >= glide.tEnd - LANDING && !!g && t - g.last > TICK_GAP));
+    // in rhythm with a wheel that is still turning (a slow wheel's notches
+    // come a little further apart, and unevenly): not a deliberate tick
+    const spin = !!g && g.n >= 3 && t - g.last <= tickGap() && rate(t) + ad / 0.45 >= Math.max(250, 0.4 * g.peakRate);
+    const landed = !!glide && !spin && (glide.done || (t >= glide.tEnd - LANDING && !!g && t - g.last > TICK_GAP));
     const fresh = !g || t - g.last > gap || dir !== g.dir || swipeAgain(ad) || (notch && landed);
     if (fresh) { g = { id: ++gid, dir, n: 0, last: t, ev: [], peakD: 0, peakRate: 0, anchor: P, sum: 0 }; note('gesture', dir, ad, Math.round(P)); }
     g.n += 1;

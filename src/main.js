@@ -41,11 +41,12 @@ if (!reducedMotion && !touchFirst) {
 
   lenis.on('scroll', ScrollTrigger.update);
 
-  const raf = (time) => {
-    lenis.raf(time);
-    requestAnimationFrame(raf);
-  };
-  requestAnimationFrame(raf);
+  // One clock for Lenis, ScrollTrigger and every tween (the gallery's
+  // slides included), with Lenis first in each frame: the scroll is set
+  // before anything reads it, so the page and the gallery stage never
+  // drift a frame apart as the motion turns its corners.
+  gsap.ticker.add((time) => lenis.raf(time * 1000), false, true);
+  gsap.ticker.lagSmoothing(0);
 
   // Expose for debugging during development
   if (import.meta.env.DEV) window.__lenis = lenis;

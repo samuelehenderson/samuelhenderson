@@ -181,8 +181,36 @@ export function initDive({ reducedMotion }) {
       { opacity: 0, scale: 1.08 },
       { opacity: 1, scale: 1, duration: 0.28, ease: 'power2.out' }, 0.74);
 
-  // End caption — "SELECTED WORK ↓" handoff to next scene
+  // End caption — "THE STORY", the hand-off to the project rooms
   tl.fromTo(capEnd,
     { opacity: 0, y: 24 },
     { opacity: 1, y: 0, duration: 0.10, ease: 'power2.out' }, 0.86);
+
+  // ── Hand-off to the gallery ───────────────────────────────────
+  // The floor of the grid fades into the same dark the gallery's sky
+  // begins with, so when this stage scrolls up and the gallery rises
+  // under it there is no hard edge between the two: one dark space with
+  // a horizon handing over to the next.
+  const fog = document.createElement('div');
+  fog.className = 'dive__fog';
+  fog.setAttribute('aria-hidden', 'true');
+  screen.appendChild(fog);
+  tl.fromTo(fog, { opacity: 0 }, { opacity: 1, duration: 0.14, ease: 'power1.inOut' }, 0.86);
+
+  // The caption leaves with the stage instead of riding up past the first
+  // room's heading.
+  const content = scene.querySelector('.dive__content');
+  if (content) {
+    gsap.fromTo(content, { opacity: 1 }, {
+      opacity: 0,
+      ease: 'power1.in',
+      scrollTrigger: {
+        trigger: scene,
+        start: 'bottom bottom',
+        end: 'bottom 55%',
+        scrub: true,
+        invalidateOnRefresh: true,
+      },
+    });
+  }
 }

@@ -19,6 +19,11 @@ html {
   text-rendering: optimizeLegibility;
   scroll-behavior: smooth;
 }
+/* Lenis (desktop) does the smoothing and routes anchors itself: native
+   smooth scrolling on top of it would turn every programmatic scroll —
+   the gallery re-centring its scroll on a room, a jump to an anchor —
+   into a second, competing animation. */
+html.lenis { scroll-behavior: auto; }
 
 body {
   min-height: 100vh;

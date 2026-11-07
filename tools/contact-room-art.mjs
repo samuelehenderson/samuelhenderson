@@ -466,6 +466,8 @@ function desk() {
 <linearGradient id="cdMug" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="#9aa3c8"/><stop offset="0.45" stop-color="#d8dcf0"/><stop offset="0.8" stop-color="#c3cdee"/><stop offset="1" stop-color="#8ea6d8"/></linearGradient>
 <filter id="cdBlur" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="6"/></filter>
 </defs>`);
+  // the desk itself and the monitor's arm (hidden on tablet / phone, where the copy stacks over them)
+  s.push('<g class="cx-deskbody">');
   // under the desk: deep shadow on the floor, slim legs
   const legs = [[x0 + 0.05, z0 + 0.06], [x0 + 0.05, z1 - 0.06]];
   s.push(`<path d="${poly([P(x0 - 0.1, YF, z0 + 0.1), P(XE, YF, z0 + 0.1), P(XE, YF, z1 + 0.15), P(x0 - 0.1, YF, z1 + 0.15)])}" fill="#010207" opacity="0.75" filter="url(#cdBlur)"/>`);
@@ -488,15 +490,29 @@ function desk() {
   s.push(`<path d="${poly([P(x0, y, z0), P(XE, y, z0)], false)}" stroke="#4ea8ff" stroke-width="1.6" stroke-opacity="0.45" fill="none"/>`);
   s.push(`<path d="${poly([P(x0, y, z1), P(x0, y, z0)], false)}" stroke="#2a3672" stroke-width="1" stroke-opacity="0.8" fill="none"/>`);
 
-  // monitor stand: base plate, tall neck behind the panel (contact shadow under the base)
-  const nx = (MON.x0 + MON.x1) / 2, nz = MON.z + 0.07;
-  const sb = [P(nx - 0.15, y, nz - 0.06), P(nx + 0.15, y, nz + 0.1)];
-  s.push(`<ellipse cx="${r1((sb[0][0] + sb[1][0]) / 2)}" cy="${r1((sb[0][1] + sb[1][1]) / 2 + 2)}" rx="${r1((sb[1][0] - sb[0][0]) * 0.62)}" ry="${r1(Math.abs(sb[0][1] - sb[1][1]) * 1.1 + 5)}" fill="url(#cdShadow)"/>`);
-  s.push(`<path d="${poly([P(nx - 0.13, y + 0.012, nz - 0.07), P(nx + 0.13, y + 0.012, nz - 0.07), P(nx + 0.13, y + 0.012, nz + 0.1), P(nx - 0.13, y + 0.012, nz + 0.1)])}" fill="#0c1024"/>`);
-  s.push(`<path d="${poly([P(nx - 0.13, y + 0.012, nz - 0.07), P(nx + 0.13, y + 0.012, nz - 0.07), P(nx + 0.13, y, nz - 0.07), P(nx - 0.13, y, nz - 0.07)])}" fill="#05071a"/>`);
-  const n0 = P(nx - 0.016, MON.y0 + 0.08, nz), n1 = P(nx + 0.016, y + 0.012, nz);
-  s.push(`<rect x="${r1(n0[0])}" y="${r1(n0[1])}" width="${r1(n1[0] - n0[0])}" height="${r1(n1[1] - n0[1])}" fill="#0a0e20"/>`);
-  s.push(`<rect x="${r1(n0[0])}" y="${r1(n0[1])}" width="1.2" height="${r1(n1[1] - n0[1])}" fill="#4ea8ff" opacity="0.25"/>`);
+  // monitor arm: a pole clamped at the desk's back edge, right of the screen, and an arm reaching
+  // in behind the panel (the monitor floats at eye height, so it reads as mounted, not stranded)
+  const PX = MON.x1 + 0.2, PZ = z1 - 0.06, PR = 0.017;
+  const YA = MON.y0 + 0.13, YT = MON.y0 + 0.2, AH = 0.034;
+  // clamp block on the desk and its contact shadow
+  const cb = [P(PX - 0.05, y, PZ - 0.04), P(PX + 0.05, y, PZ + 0.05)];
+  s.push(`<ellipse cx="${r1((cb[0][0] + cb[1][0]) / 2)}" cy="${r1(P(PX, y, PZ)[1] + 2)}" rx="${r1((cb[1][0] - cb[0][0]) * 0.9)}" ry="${r1(Math.abs(cb[0][1] - cb[1][1]) * 0.9 + 4)}" fill="url(#cdShadow)"/>`);
+  s.push(`<path d="${poly([P(PX - 0.04, y + 0.03, PZ - 0.035), P(PX + 0.04, y + 0.03, PZ - 0.035), P(PX + 0.04, y, PZ - 0.035), P(PX - 0.04, y, PZ - 0.035)])}" fill="#0a0e22"/>`);
+  s.push(`<path d="${poly([P(PX - 0.04, y + 0.03, PZ - 0.035), P(PX + 0.04, y + 0.03, PZ - 0.035), P(PX + 0.04, y + 0.03, PZ + 0.045), P(PX - 0.04, y + 0.03, PZ + 0.045)])}" fill="#151b3c"/>`);
+  // the pole (round: a lit edge on the side facing the screen)
+  const p0 = P(PX - PR, YT, PZ), p1 = P(PX + PR, y + 0.03, PZ);
+  s.push(`<rect x="${r1(p0[0])}" y="${r1(p0[1])}" width="${r1(p1[0] - p0[0])}" height="${r1(p1[1] - p0[1])}" rx="${r1((p1[0] - p0[0]) / 2)}" fill="#11173a"/>`);
+  s.push(`<rect x="${r1(p0[0] + 1)}" y="${r1(p0[1] + 3)}" width="1.6" height="${r1(p1[1] - p0[1] - 3)}" fill="#4ea8ff" opacity="0.35"/>`);
+  s.push(`<rect x="${r1(p1[0] - 2.4)}" y="${r1(p0[1] + 3)}" width="1.2" height="${r1(p1[1] - p0[1] - 3)}" fill="#03040c" opacity="0.6"/>`);
+  // collar + arm running in behind the monitor (the panel hides its far end)
+  const c0 = P(PX - PR - 0.006, YA + 0.025, PZ), c1 = P(PX + PR + 0.006, YA - AH - 0.012, PZ);
+  const ex = MON.x1 - 0.1, ez = MON.z + 0.09;
+  s.push(`<path d="${poly([P(PX, YA, PZ), P(ex, YA, ez), P(ex, YA - AH, ez), P(PX, YA - AH, PZ)])}" fill="#0d1128"/>`);
+  s.push(`<path d="${poly([P(PX, YA, PZ), P(ex, YA, ez)], false)}" stroke="#4ea8ff" stroke-opacity="0.3" stroke-width="1" fill="none"/>`);
+  s.push(`<rect x="${r1(c0[0])}" y="${r1(c0[1])}" width="${r1(c1[0] - c0[0])}" height="${r1(c1[1] - c0[1])}" rx="2" fill="#10152f"/>`);
+  s.push(`<rect x="${r1(c0[0])}" y="${r1(c0[1])}" width="${r1(c1[0] - c0[0])}" height="1.2" fill="#7ec0ff" opacity="0.3"/>`);
+
+  s.push('</g>');
 
   // the monitor: same bezel and screen as the hero's, a thin side showing its depth
   s.push(`<ellipse cx="${r1(mcx)}" cy="${r1((my0 + my1) / 2)}" rx="${r1((mx1 - mx0) * 0.95)}" ry="${r1((my0 - my1) * 1.25)}" fill="url(#cdMonGlow)"/>`);

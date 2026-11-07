@@ -88,6 +88,14 @@
   will-change: transform;
 }
 
+/* The mouse parallax writes --mx / --my on each [data-mouse] layer every
+   frame. Custom properties inherit, so without this every node of the room's
+   SVGs would restyle and be re-committed on each frame (measured: ~80 long
+   tasks in 4 s of mouse movement under software rendering, ~1 with it). Pin
+   them on the layers' children: only the layer's own transform changes. */
+.contact-layer .layer-inner > *,
+.cx-view__drift > * { --mx: 0px; --my: 0px; }
+
 .cx-art {
   position: absolute;
   left: var(--ax);
@@ -124,6 +132,7 @@
   position: absolute;
   inset: 0;
   transform: translate3d(var(--mx, 0px), var(--my, 0px), 0);
+  will-change: transform;   /* the mouse drift moves a layer, never repaints the view */
 }
 .cx-view__art {
   display: block;
@@ -139,6 +148,7 @@
   pointer-events: none;
   opacity: 0;
   transition: opacity 1.6s ease;
+  will-change: transform;   /* its own layer: a snow frame never repaints the mountains */
 }
 .cx-snow.is-on { opacity: 1; }
 
@@ -213,7 +223,9 @@
 
 .contact__heading {
   font-family: var(--font-display);
-  font-size: clamp(2rem, 1.4rem + 2.4vw, 3.5rem);
+  /* also capped by the height, so on a short laptop screen the copy stays
+     clear of the window above it */
+  font-size: clamp(2rem, min(1.4rem + 2.4vw, 7.4vh), 3.5rem);
   font-weight: 700;
   line-height: 1.05;
   letter-spacing: var(--tracking-tight);
@@ -518,8 +530,9 @@
   .contact__stage::after {
     background: linear-gradient(180deg, transparent 0, transparent calc(var(--ay) + 520 * var(--u)), rgba(3, 4, 12, 0.6) calc(var(--ay) + 760 * var(--u)), var(--cx-night) 100%);
   }
-  /* the mug and notebook would sit behind the copy here */
-  .cx-props { display: none; }
+  /* the desk, its arm, the mug and notebook would sit behind the copy here;
+     the monitor stays, glowing on the right wall */
+  .cx-props, .cx-deskbody { display: none; }
   .contact__wrap {
     display: grid;
     grid-template-columns: 1fr;
@@ -580,4 +593,5 @@
 @media (prefers-reduced-motion: reduce) {
   .contact-layer, .contact-layer .layer-inner, .cx-view, .cx-view__drift { transform: none !important; }
   .contact__note { transform: none; }
+  .cx-snow { transition: none; }
 }

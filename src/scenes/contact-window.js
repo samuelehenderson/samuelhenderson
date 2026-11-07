@@ -7,15 +7,16 @@
  * own parallax; the window opening (.cx-window) clips it to the glass. The
  * mountains and sky stay static SVG; only flakes and twinkles are drawn.
  *
- *  - starts after first paint (load → idle), never blocks the page
+ *  - starts after load and the first contentful paint, in idle time; never
+ *    blocks the page
  *  - devicePixelRatio capped, flake count scaled to the glass area (fewer on
  *    phones), ~30 draws a second
  *  - paused while the window is off screen or the tab is hidden
  *  - prefers-reduced-motion: one still, snow-dotted frame, no loop
  */
 
-const PX_PER_FLAKE = 950;  // one flake per ~31×31 px of glass
-const MAX_FLAKES = 150;
+const PX_PER_FLAKE = 780;  // one flake per ~28×28 px of glass
+const MAX_FLAKES = 170;
 const MIN_FLAKES = 18;
 const FRAME_MS = 30;
 
@@ -64,8 +65,27 @@ export function initContactWindow(scene, { reducedMotion }) {
   const idle = window.requestIdleCallback
     ? (cb) => window.requestIdleCallback(cb, { timeout: 1500 })
     : (cb) => setTimeout(cb, 150);
-  if (document.readyState === 'complete') idle(begin);
-  else window.addEventListener('load', () => idle(begin), { once: true });
+  // after load AND the first contentful paint (on a busy machine the first
+  // paint can land after load), then in idle time
+  const loaded = () => afterFirstPaint(() => idle(begin));
+  if (document.readyState === 'complete') loaded();
+  else window.addEventListener('load', loaded, { once: true });
+}
+
+function afterFirstPaint(cb) {
+  let done = false;
+  const go = () => { if (!done) { done = true; cb(); } };
+  try {
+    if (performance.getEntriesByName('first-contentful-paint').length) { go(); return; }
+    const po = new PerformanceObserver((list) => {
+      if (list.getEntriesByName('first-contentful-paint').length) { po.disconnect(); go(); }
+    });
+    po.observe({ type: 'paint', buffered: true });
+  } catch {
+    // no paint timing here: two frames after load is the next best thing
+    requestAnimationFrame(() => requestAnimationFrame(go));
+  }
+  setTimeout(go, 3000);  // never wait on paint timing forever
 }
 
 function start(win, host, art, reducedMotion) {

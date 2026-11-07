@@ -28,10 +28,14 @@ const ZN = 0.55;                 // near cut (well outside the frame)
 const BOARD = 0.125;
 // window: opening on the wall face, edges and mullions on board seams (6 + 5 + 6 boards); glass 140 mm deeper
 const WIN = { x0: -1.125, x1: 1.0, y0: -0.3, y1: 1.15, zg: ZB + 0.14, frame: 0.05, mull: [-0.375, 0.25], mw: 0.016 };
-// desk + monitor (the hero's monitor, on an arm; its bottom edge lines up with the sill on screen)
+// desk + monitor (the hero's monitor, on an arm). The monitor is 2.7 m in front of the back wall:
+// its left edge crosses the corner where the back wall meets the right wall (art x 1126.5) by
+// ~60 units, so it overlaps the back wall and reads as nearer than it, not hung on the side wall.
+// Its bottom sits ~20 units below the sill line, closer to the desk; the note's top on a
+// 1280x720 screen is at ~455 art units, so it still clears the note there.
 const DESK = { x0: -0.2, z0: 0.95, z1: 1.72, y: -0.61, t: 0.032 };
-const MON = { x0: 0.8, x1: 1.44, z: 1.52 };
-MON.y0 = (WIN.y0 * MON.z) / ZB;            // bottom edge on the sill line
+const MON = { x0: 0.66, x1: 1.3, z: 1.52 };
+MON.y0 = (WIN.y0 * MON.z) / ZB - 0.04;     // 20 art units below the sill line
 MON.y1 = MON.y0 + 0.38;
 
 function rng(seed) {
@@ -517,6 +521,7 @@ function desk() {
   // the monitor: same bezel and screen as the hero's, a thin side showing its depth
   s.push(`<ellipse cx="${r1(mcx)}" cy="${r1((my0 + my1) / 2)}" rx="${r1((mx1 - mx0) * 0.95)}" ry="${r1((my0 - my1) * 1.25)}" fill="url(#cdMonGlow)"/>`);
   const d = 0.035;
+  s.push('<g class="cx-monitor">');
   s.push(`<path d="${poly([P(MON.x0, MON.y1, MON.z), P(MON.x0, MON.y1, MON.z + d), P(MON.x0, MON.y0, MON.z + d), P(MON.x0, MON.y0, MON.z)])}" fill="#121733"/>`);
   const bw = mx1 - mx0, bh = my0 - my1;
   s.push(`<rect x="${r1(mx0)}" y="${r1(my1)}" width="${r1(bw)}" height="${r1(bh)}" rx="${r1(bw * 0.022)}" fill="#0a0d13"/>`);
@@ -536,12 +541,14 @@ function desk() {
   s.push(`<rect x="${r1(cux)}" y="${r1(cuy)}" width="${r1(3 * k)}" height="${r1(12 * k)}" fill="#cfe6ff" opacity="0.8"/>`);
   s.push(`<path d="${poly([[sx, sy], [sx + sw * 0.42, sy], [sx + sw * 0.2, sy + shh], [sx, sy + shh]])}" fill="#ffffff" opacity="0.025"/>`);
   s.push(`<rect x="${r1(mx0)}" y="${r1(my1)}" width="${r1(bw)}" height="1.4" fill="#7ec0ff" opacity="0.22"/>`);
+  s.push('</g>');
 
   // props (hidden on tablet / phone, where they would sit behind the copy)
   s.push('<g class="cx-props">');
   // keyboard in front of the monitor (mostly behind the note on desktop)
-  const kb = [P(0.86, y + 0.012, 1.08), P(1.36, y + 0.012, 1.08), P(1.36, y + 0.012, 1.24), P(0.86, y + 0.012, 1.24)];
-  s.push(`<path d="${poly([P(0.86, y, 1.08), P(1.36, y, 1.08), P(1.36, y, 1.24), P(0.86, y, 1.24)])}" fill="#010208" opacity="0.5" filter="url(#cdBlur)"/>`);
+  const ka = MON.x0 + 0.06, kz = MON.x0 + 0.56;   // centred under the screen
+  const kb = [P(ka, y + 0.012, 1.08), P(kz, y + 0.012, 1.08), P(kz, y + 0.012, 1.24), P(ka, y + 0.012, 1.24)];
+  s.push(`<path d="${poly([P(ka, y, 1.08), P(kz, y, 1.08), P(kz, y, 1.24), P(ka, y, 1.24)])}" fill="#010208" opacity="0.5" filter="url(#cdBlur)"/>`);
   s.push(`<path d="${poly(kb)}" fill="#080b1a"/><path d="${poly([kb[0], kb[1]], false)}" stroke="#4ea8ff" stroke-opacity="0.35" stroke-width="1" fill="none"/>`);
 
   // notebook + pen lying on the desk under the window (perspective quads), mug with steam
@@ -644,7 +651,7 @@ if (start >= 0 && end > start) {
 }
 writeFileSync(INDEX, html.slice(0, start) + block + html.slice(end));
 console.log(`contact room written to index.html (glass ${r1(GLASS.x)},${r1(GLASS.y)} ${r1(GLASS.w)}x${r1(GLASS.h)}; view ${v.vb.w}x${v.vb.h}, horizon ${v.HZ})`);
-console.log('monitor', P(MON.x0, MON.y1, MON.z).map(r1), P(MON.x1, MON.y0, MON.z).map(r1), 'back wall', P(XL, YC, ZB).map(r1), P(XR, YF, ZB).map(r1));
+console.log('monitor (side face to bezel)', [r1(P(MON.x0, 0, MON.z + 0.035)[0]), r1(P(0, MON.y1, MON.z)[1])], P(MON.x1, MON.y0, MON.z).map(r1), 'back wall', P(XL, YC, ZB).map(r1), P(XR, YF, ZB).map(r1));
 // contact.css keeps the copy and the note clear of these (.contact__wrap --win-l / --win-r / --win-b)
 const sx0 = P(WIN.x0 - 0.07 - 0.04, 0, ZB)[0], sx1 = P(WIN.x1 + 0.07 + 0.04, 0, WIN.zg)[0];
 console.log(`window outer, art units: left ${Math.floor(P(WIN.x0 - 0.11, 0, ZB - 0.07)[0])}, right ${Math.ceil(P(WIN.x1 + 0.11, 0, ZB - 0.07)[0])}, bottom ${Math.ceil(P(0, WIN.y0 - 0.03 - 0.26, ZB)[1])} (stool shadow), top ${Math.floor(P(0, WIN.y1 + 0.07, ZB)[1])}`);

@@ -121,12 +121,22 @@
   width: calc(var(--gw) * 100% / 1600);
   height: calc(var(--gh) * 100% / 1000);
   overflow: hidden;
-  background: #3a4890;
+  /* the colour of the view's top edge (cloud deck over the sky), so a
+     sub-pixel reveal at the glass's edge never shows */
+  background: #0c1133;
 }
 .cx-view {
   position: absolute;
   inset: -15% -8%;
   will-change: transform;
+}
+/* On desktop the view rides its own scroll parallax (down 0.04 x the screen
+   height x 0.5 at the page end) plus up to 7px of mouse drift. 15% of the
+   glass covers that on 16:10 and wider screens; on a tall screen with the
+   desktop layout (iPad Pro portrait, 1200x1600) it does not, so the view's
+   top overhang is at least that travel plus 5px. */
+@media (min-width: 901px) {
+  .cx-view { top: min(-15%, calc(-2vh - 12px)); }
 }
 .cx-view__drift {
   position: absolute;
@@ -303,7 +313,9 @@
   position: absolute;
   right: var(--note-r);
   bottom: var(--cx-bottom);
-  width: clamp(340px, calc(100 * var(--cqw) - var(--note-r) - var(--win-r) - 28px), 460px);
+  /* never left of the window's outer edge + 28px (the tilt adds ~5px at the
+     top-left corner); 300px still fits name and email side by side */
+  width: clamp(300px, calc(100 * var(--cqw) - var(--note-r) - var(--win-r) - 28px), 460px);
   display: grid;
   grid-template-columns: 1fr 1fr;
   column-gap: 1.25rem;
@@ -323,6 +335,12 @@
 .contact__note > .note__salutation,
 .contact__note > .note-field:nth-of-type(3),
 .contact__note > .note__error { grid-column: 1 / -1; }
+/* Narrow or short desktop screens (the note's width formula drops under
+   ~335px only below 1000px wide or 600px high): the email field takes the
+   wider column, so "you@somewhere" still fits beside the name */
+@media (min-width: 901px) and (max-width: 999px), (min-width: 901px) and (max-height: 600px) {
+  .contact__note { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); }
+}
 /* drafting grid + border frame */
 .contact__note::before {
   content: "";
@@ -427,6 +445,7 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
   font-weight: 600;
+  white-space: nowrap;
   cursor: pointer;
   box-shadow: 0 4px 14px rgba(2, 4, 18, 0.35);
   transition:
@@ -523,8 +542,11 @@
     position: relative;
     height: auto;
     min-height: 100vh;
+    /* both side walls in view, the window a little left of centre, and
+       ~70% of the monitor at the right edge, crossing the corner of the
+       back wall (as on desktop) */
     --u: calc(100 * var(--cqw) / 960);
-    --ax: calc(43 * var(--cqw) - 731 * var(--u));
+    --ax: calc(41 * var(--cqw) - 731 * var(--u));
     --ay: calc(var(--header-h) + 22px - 151 * var(--u));
   }
   .contact__stage::after {
@@ -577,9 +599,12 @@
 }
 
 @media (max-width: 600px) {
+  /* framed wider: the ceiling's corners, both side walls, the window a
+     little left of centre, ~70% of the monitor at the right edge */
   .contact__inner {
-    --u: calc(100 * var(--cqw) / 557);
-    --ax: calc(45 * var(--cqw) - 731 * var(--u));
+    --u: calc(100 * var(--cqw) / 1000);
+    --ax: calc(43.5 * var(--cqw) - 731 * var(--u));
+    --ay: calc(var(--header-h) + 48px - 151 * var(--u));
   }
   /* name and email stack on a phone */
   .contact__note { grid-template-columns: 1fr; padding: var(--space-5) 1.4rem 1.25rem; }

@@ -65,7 +65,7 @@ const LEGENDS = {
       ['RF · AHU-1, AHU-2, CT-1', 'sa'],
       ['L4–L6 · served by AHU-2', 'sa'],
       ['L1–L3 · served by AHU-1', 'sa'],
-      ['B1 · Chillers, boiler, pumps', 'chw'],
+      ['B1 · Chillers, HW plant, pumps', 'chw'],
     ],
   },
 };

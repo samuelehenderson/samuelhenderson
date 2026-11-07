@@ -642,7 +642,7 @@ export function createWorld({ layout, levels, quality, modeU, ctxU }) {
     addUnit(host) {
       const ls = levelState[host.li];
       const entry = { id: host.id, host, level: host.li };
-      for (const id of [host.id, ...(host.unit.aliases || []), ...host.subs.map((x) => x.id)]) equipment.set(id, entry);
+      for (const id of [host.id, ...host.subs.map((x) => x.id)]) equipment.set(id, entry);
       host.holder.visible = ls.solidVis !== false;
       for (const m of host.casters) {
         if (ls.castDone !== undefined) m.castShadow = ls.castDone;

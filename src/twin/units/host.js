@@ -469,7 +469,7 @@ export function createHost(unit, ctx) {
     view.update();
     view.tick(dt * (f.reducedMotion ? 0.3 : 1), now);
   }
-  const mine = (id) => !!id && (id === unit.id || !!unit.aliases?.includes(id) || host.subs.some((s) => s.id === id));
+  const mine = (id) => !!id && (id === unit.id || host.subs.some((s) => s.id === id));
 
   function pick(raycaster) {
     if (!host.pickUnit || holder.parent?.visible === false || !holder.visible) return null;
@@ -489,7 +489,7 @@ export function createHost(unit, ctx) {
 
   function boxOf(id) {
     if (!id) return null;
-    if (id === unit.id || unit.aliases?.includes(id)) return host.box;
+    if (id === unit.id) return host.box;
     return host.subs.find((s) => s.id === id)?.box || null;
   }
 

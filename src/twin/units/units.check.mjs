@@ -18,12 +18,7 @@
  *   (h) each model's placement (x, y, z, rotY) is the sim layout's equipment
  *       entry, and the pumps drawn inside a unit (CHWP-n, HWP-n) have it as parent
  *
- * INTERIM (until the sim replaces the boiler with the HHW-1 plant model, which
- * is builder 2's half of this change): while sim.state.plant.hhw is absent, (d)
- * lets the plant values the boiler cannot stand in for read non-finite (they
- * read unbound on the model: no loop dP, no second pump) and (e) reports
- * instead of failing. Both turn strict by themselves once the sim has P.hhw /
- * HHW-1; (h) likewise reports until the layout has HHW-1. Exit code 1 on any failure.
+ * Exit code 1 on any failure.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -78,12 +73,8 @@ for (const u of UNITS) {
 
 /* (d) finite values on a fresh sim */
 console.log('(d) bindings finite on a fresh sim');
-const INTERIM_NONFINITE = new Set(['HHW-1:HHW.DP', 'HHW-1:HHW.DP_SP', 'HHW-1:HHW.P2_SS', 'HHW-1:HHW.P2_STS', 'HHW-1:HHW.P2_SVD']);
-let hasHhw = false;
 for (const hour of [5.5, 12, 2]) {
   const sim = createSim({ seed: 7, startHour: hour });
-  hasHhw = !!sim.state.plant.hhw;
-  const pending = [];
   for (const u of UNITS) {
     for (const [s, fn] of Object.entries(u.bindings)) {
       let v = NaN;
@@ -92,29 +83,20 @@ for (const hour of [5.5, 12, 2]) {
       } catch {
         v = NaN;
       }
-      if (Number.isFinite(v)) {
-        pass++;
-        continue;
-      }
-      if (!hasHhw && INTERIM_NONFINITE.has(`${u.id}:${s}`)) pending.push(s);
-      else ok(false, `${u.id}: ${s} is not finite at ${hour}:00 (${v})`);
+      ok(Number.isFinite(v), `${u.id}: ${s} is not finite at ${hour}:00 (${v})`);
     }
   }
-  if (pending.length) note(`${hour}h: ${pending.join(', ')} read unbound until the sim has the HHW-1 plant model (P.hhw)`);
 }
 
 /* (e) layout */
 console.log('(e) layout has no B-1 / boiler');
 const layout = createSim({ seed: 7, startHour: 9.5 }).layout;
 const json = JSON.stringify(layout);
-const clean = !json.includes('"B-1"') && !/boiler/i.test(json);
-if (clean || hasHhw) ok(clean, 'the sim layout still mentions B-1 / boiler');
-else note('the sim layout still has B-1 (the boiler): pending the HHW-1 plant model in sim.js');
+ok(!json.includes('"B-1"') && !/boiler/i.test(json), 'the sim layout still mentions B-1 / boiler');
 
 /* (h) placements: the models stand where the sim's layout says (labels, runs and the footprint use it) */
 console.log('(h) catalog placements vs the sim layout');
 {
-  const layoutHhw = layout.equipment.some((e) => e.id === 'HHW-1');
   const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
   const issues = [];
   for (const u of UNITS) {
@@ -133,11 +115,7 @@ console.log('(h) catalog placements vs the sim layout');
       if (!se || se.parent !== u.id || se.level !== u.level) issues.push(`${s.id}: layout parent ${se?.parent ?? '(none)'} on ${se?.level ?? '-'} (want ${u.id} on ${u.level})`);
     }
   }
-  if (layoutHhw) for (const m of issues) ok(false, m);
-  else {
-    pass++;
-    for (const m of issues) note(`${m} (pending the sim layout of design §2.2)`);
-  }
+  ok(issues.length === 0, `placements: ${issues.join('; ')}`);
 }
 
 /* (f) only src/twin/units imports the mirror */

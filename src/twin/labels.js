@@ -66,7 +66,7 @@ export function createLabels({ host, layout, levels, coarsePointer }) {
     return { el, dot, rule, pill, name, val };
   };
 
-  const eqIds = ['AHU-1', 'AHU-2', 'CT-1', 'CH-1', 'CH-2', 'B-1'];
+  const eqIds = ['AHU-1', 'AHU-2', 'CT-1', 'CH-1', 'CH-2', 'HHW-1'];
   for (const id of eqIds) {
     const eq = layout.equipment.find((e) => e.id === id);
     if (!eq) continue;
@@ -119,10 +119,12 @@ export function createLabels({ host, layout, levels, coarsePointer }) {
       if (c.status === 'starting') return ['Starting', ''];
       return c.on ? [`${Math.round(finite(c.load))}%`, ''] : ['Standby', 'off'];
     }
-    if (id === 'B-1') {
-      const b = state?.plant?.boiler;
-      if (!b) return ['', ''];
-      return b.on ? [`Fire ${Math.round(finite(b.fire))}%`, ''] : ['Standby', 'off'];
+    if (id === 'HHW-1') {
+      // the plant's key reading is its HW supply temperature (ClarityView's keyReading HHW.HWS)
+      const h = state?.plant?.hhw;
+      if (!h) return ['', ''];
+      if (h.tempAlarm) return [`${Math.round(finite(h.hws))}°F`, 'alarm'];
+      return h.enabled ? [`${Math.round(finite(h.hws))}°F`, ''] : ['Standby', 'off'];
     }
     return ['', ''];
   }

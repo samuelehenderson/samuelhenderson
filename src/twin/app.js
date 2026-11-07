@@ -409,20 +409,14 @@ export async function mountTwin({ stage, canvasHost, hud, sim, reducedMotion = f
 
   /**
    * The card for an id: the sim's description; a sub-part the sim does not
-   * describe (yet) shows its unit's card; a unit the sim's layout does not know
-   * yet (INTERIM: HHW-1 while the layout still says B-1) borrows its alias's rows.
+   * describe shows its unit's card.
    */
   function describe(id) {
     const d = safe(() => sim.describe(id));
     if (d || !units) return d;
     const h = units.owner(id);
-    if (!h) return null;
-    if (id !== h.id) return describe(h.id);
-    for (const a of h.unit.aliases || []) {
-      const d2 = safe(() => sim.describe(a));
-      if (d2) return { ...d2, id: h.id, title: `${h.id} · ${h.unit.cardTitle || h.unit.title}` };
-    }
-    return null;
+    if (!h || id === h.id) return null;
+    return describe(h.id);
   }
 
   function select(id, { focus = false, pos = null } = {}) {

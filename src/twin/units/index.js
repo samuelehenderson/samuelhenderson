@@ -147,7 +147,7 @@ export function createUnits({ layout, levels, world, tier = 'high', reducedMotio
       }
       if (disposed) return;
       hosts.push(host);
-      for (const id of [unit.id, ...(unit.aliases || []), ...host.subs.map((s) => s.id)]) byId.set(id, host);
+      for (const id of [unit.id, ...host.subs.map((s) => s.id)]) byId.set(id, host);
       world.addUnit(host);
       // every unit starts as its baked copy: the first frame picks by screen size (no hysteresis yet)
       host.setLod(1, performance.now());

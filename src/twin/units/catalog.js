@@ -23,7 +23,6 @@ import { vavConfig } from '../../clarityview/ahu/vav/vav-config.js';
 import { suffixMap } from '../../clarityview/ahu/ahu3d-bridge.js';
 
 const clone = (o) => JSON.parse(JSON.stringify(o));
-const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const b01 = (v) => (v ? 1 : 0);
 
 /* ── configs (built once) ────────────────────────────────────────── */
@@ -107,47 +106,21 @@ const P = (s) => s.plant;
 const pump = (s, id) => s.plant.pumps[id];
 const proven = (p) => (p ? b01(p.on && p.speed > 5) : NaN);
 
-// INTERIM (builder 2 replaces the boiler with the steam-to-HW plant model, P.hhw):
-// until the sim has P.hhw, the plant reads today's hot-water state: the boiler's
-// firing rate stands in for the steam valve demand (split 1/3 then 2/3), HX-1 is
-// in service while the loop is enabled, HWP-1 is plant pump P-1 and P-2 (no
-// HWP-2 yet) reads unbound, so it never turns.
-function interimHhw(s) {
-  const B = s.plant.boiler || {};
-  const hwp = s.plant.pumps['HWP-1'] || {};
-  const en = !!hwp.on;
-  const u = B.on ? clamp(B.fire || 0, 0, 100) : 0;
-  const cv1 = clamp(3 * u, 0, 100);
-  const cv2 = clamp(1.5 * (u - 33.33), 0, 100);
-  return {
-    enabled: en, hws: B.hws, hwr: B.hwr, dp: NaN, dpSp: NaN, tempAlarm: false,
-    cv1, cv1Fb: cv1, cv2, cv2Fb: cv2, byp: 0, bypFb: 0,
-    hx: [{ iso1: en ? 100 : 0, iso2: b01(en) }, { iso1: 0, iso2: 0 }],
-  };
-}
-const HHW = (s) => s.plant.hhw || interimHhw(s);
+const HHW = (s) => s.plant.hhw;
+const hx = (s, i) => s.plant.hhw.hx[i - 1];
 
 /* ── binding tables (design §3) ──────────────────────────────────── */
 
 function ahuBindings(id) {
   const A = (s) => s.ahus[id];
-  const running = (a) => !!a.on;
-  const q2 = (a) => {
-    const d = a.cfmDesign > 0 ? a.cfm / a.cfmDesign : 0;
-    return d * d;
-  };
-  // new sim fields (rad, ead, pfDp, ffDp, sfFault) are read when present, else derived the same way
-  const pf = (a) => a.pfDp ?? 0.35 * q2(a);
-  const ff = (a) => a.ffDp ?? 0.55 * q2(a);
-  const sfFlt = (a) => b01(a.sfFault ?? a.alarm === 'Supply fan failure');
   const b = {
     OAD: (s) => A(s).oad,
-    RAD: (s) => A(s).rad ?? 100 - A(s).oad,
-    EAD: (s) => A(s).ead ?? (running(A(s)) ? clamp((A(s).oad - 20) / 0.8, 0, 100) : 0),
-    PFIL: (s) => pf(A(s)),
-    'PFIL.ALM': (s) => b01(pf(A(s)) > 1.5),
-    FFIL: (s) => ff(A(s)),
-    'FFIL.ALM': (s) => b01(ff(A(s)) > 1.5),
+    RAD: (s) => A(s).rad,
+    EAD: (s) => A(s).ead,
+    PFIL: (s) => A(s).pfDp,
+    'PFIL.ALM': (s) => b01(A(s).pfDp > 1.5),
+    FFIL: (s) => A(s).ffDp,
+    'FFIL.ALM': (s) => b01(A(s).ffDp > 1.5),
     PHV: (s) => A(s).hcv,
     CCV: (s) => A(s).ccv,
     'SAT.SP': (s) => A(s).satSp,
@@ -163,7 +136,7 @@ function ahuBindings(id) {
     b[`SF${n}.SS`] = (s) => b01(A(s).cmd);
     b[`SF${n}.STS`] = (s) => b01(A(s).on && A(s).sfSpeed > 5);
     b[`SF${n}.SVD`] = (s) => A(s).sfSpeed;
-    b[`SF${n}.FLT`] = (s) => sfFlt(A(s));
+    b[`SF${n}.FLT`] = (s) => b01(A(s).sfFault);
     b[`RF${n}.SS`] = (s) => b01(A(s).cmd);
     b[`RF${n}.STS`] = (s) => b01(A(s).on && A(s).rfSpeed > 5);
     b[`RF${n}.SVD`] = (s) => A(s).rfSpeed;
@@ -200,7 +173,7 @@ function chillerBindings(id, pumpId) {
     'CH.CHWR': (s) => C(s).chwr,
     'CH.SP': (s) => P(s).chwsSp,
     'CH.CWS': (s) => P(s).tower.cws,
-    'CH.CWR': (s) => C(s).cwl ?? (run(C(s)) ? P(s).tower.cwr : P(s).tower.cws),
+    'CH.CWR': (s) => C(s).cwl,
   };
 }
 
@@ -228,11 +201,11 @@ const HHW_BINDINGS = (() => {
     'HHW.BYP_FB': (s) => HHW(s).bypFb,
   };
   for (const i of [1, 2]) {
-    b[`HHW.HX${i}_ISO1`] = (s) => HHW(s).hx?.[i - 1]?.iso1;
-    b[`HHW.HX${i}_ISO2`] = (s) => HHW(s).hx?.[i - 1]?.iso2;
-    b[`HHW.P${i}_SS`] = (s) => (pump(s, `HWP-${i}`) ? b01(pump(s, `HWP-${i}`).on) : NaN);
+    b[`HHW.HX${i}_ISO1`] = (s) => hx(s, i).iso1;
+    b[`HHW.HX${i}_ISO2`] = (s) => hx(s, i).iso2;
+    b[`HHW.P${i}_SS`] = (s) => b01(pump(s, `HWP-${i}`).on);
     b[`HHW.P${i}_STS`] = (s) => proven(pump(s, `HWP-${i}`));
-    b[`HHW.P${i}_SVD`] = (s) => pump(s, `HWP-${i}`)?.speed;
+    b[`HHW.P${i}_SVD`] = (s) => pump(s, `HWP-${i}`).speed;
   }
   return b;
 })();
@@ -242,45 +215,43 @@ const HHW_BINDINGS = (() => {
 /**
  * level/x/y/z/rotY: the holder's placement (y = level origin). curb: a steel
  * roof curb under the unit (metres). subs: sub-parts picked on their own, by
- * the ClarityView pick title on (an ancestor of) their meshes. aliases: layout
- * ids this unit stands in for (INTERIM: B-1 until the sim's layout says HHW-1).
- * unmapped: configured suffixes the sim does not model (resolve: unbound).
+ * the ClarityView pick title on (an ancestor of) their meshes. unmapped:
+ * configured suffixes the sim does not model (resolve: unbound).
  */
 export const UNITS = [
   {
     id: 'AHU-1', cls: 'ahu', kind: 'ahu', rhAfterFans: true, title: 'AHU-1', family: 'air',
     config: ahuConfig('left'), level: 'RF', x: 0, y: 24, z: -8.5, rotY: 0, curb: { w: 12.6, h: 0.3, d: 2.7 },
-    bindings: ahuBindings('AHU-1'), unmapped: ['RF1.FLT', 'RF2.FLT'], subs: [], aliases: [],
+    bindings: ahuBindings('AHU-1'), unmapped: ['RF1.FLT', 'RF2.FLT'], subs: [],
   },
   {
     id: 'AHU-2', cls: 'ahu', kind: 'ahu', rhAfterFans: true, title: 'AHU-2', family: 'air',
     config: ahuConfig('right'), level: 'RF', x: 0, y: 24, z: 8.5, rotY: Math.PI, curb: { w: 12.6, h: 0.3, d: 2.7 },
-    bindings: ahuBindings('AHU-2'), unmapped: ['RF1.FLT', 'RF2.FLT'], subs: [], aliases: [],
+    bindings: ahuBindings('AHU-2'), unmapped: ['RF1.FLT', 'RF2.FLT'], subs: [],
   },
   {
     // lodBias: the tower's live model differs from its baked copy only by the fan inside the
     // stack, so it goes live a little later than its size alone would say
     id: 'CT-1', cls: 'tower', kind: 'tower', title: 'CT-1', family: 'water', tower: true, lodBias: 0.8,
     config: towerConfig(), level: 'RF', x: 13.6, y: 24, z: 0, rotY: 0,
-    bindings: TOWER_BINDINGS, unmapped: ['CTF1.FLT'], subs: [], aliases: [],
+    bindings: TOWER_BINDINGS, unmapped: ['CTF1.FLT'], subs: [],
   },
   ...[['CH-1', -8.2, 'CHWP-1'], ['CH-2', -4.0, 'CHWP-2']].map(([id, z, p]) => ({
     id, cls: 'chiller', kind: 'chiller-wc', title: id, family: 'water',
     config: chillerConfig(), level: 'B1', x: 13.6, y: -4.5, z, rotY: 0,
-    bindings: chillerBindings(id, p), unmapped: [], subs: [{ id: p, pickTitle: /^Chilled-water pump$/ }], aliases: [],
+    bindings: chillerBindings(id, p), unmapped: [], subs: [{ id: p, pickTitle: /^Chilled-water pump$/ }],
   })),
   {
     id: 'CWP-1', cls: 'booster', kind: 'booster', title: 'CWP-1', family: 'water',
     config: cwpConfig(), level: 'B1', x: 10.9, y: -4.5, z: 1.55, rotY: 0,
-    bindings: CWP_BINDINGS, unmapped: ['BP1.FLT'], subs: [], aliases: [],
+    bindings: CWP_BINDINGS, unmapped: ['BP1.FLT'], subs: [],
   },
   {
-    id: 'HHW-1', cls: 'hhw', kind: 'hx', title: 'HHW-1', cardTitle: 'Heating hot water plant', family: 'water',
+    id: 'HHW-1', cls: 'hhw', kind: 'hx', title: 'HHW-1', family: 'water',
     config: HHW_CONFIG, level: 'B1', x: -13.0, y: -4.5, z: 3.4, rotY: 0,
     bindings: HHW_BINDINGS,
     unmapped: ['HHW.HX_CHG_ALM', 'HHW.MAX_VLV', 'HHW.MAX_VLV_SP', 'HHW.HX1_RT', 'HHW.HX2_RT', 'HHW.P1_FLT', 'HHW.P2_FLT', 'HHW.P1_OVR', 'HHW.P2_OVR', 'HHW.P1_RT', 'HHW.P2_RT'],
     subs: [{ id: 'HWP-1', pickTitle: /^Pump P-1$/ }, { id: 'HWP-2', pickTitle: /^Pump P-2$/ }],
-    aliases: ['B-1'],
   },
 ];
 

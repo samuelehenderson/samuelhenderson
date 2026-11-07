@@ -794,6 +794,8 @@ function wheelSteer(lenis, C) {
     const ad = Math.abs(d);
     const P = lenis.animatedScroll;
     const gap = ad >= 40 ? GAP_NOTCH : GAP_PAD;
+    // time since the wheel's last event (before this one joins its gesture)
+    const since = g ? t - g.last : Infinity;
     // A wheel notch (as big as any in its gesture: not a trackpad's tail)
     // once the page has come to rest on a station — or is landing on it,
     // after a deliberate pause — is a new push: every such tick moves.
@@ -850,6 +852,21 @@ function wheelSteer(lenis, C) {
       // scrolling (a walk leaves once the wheel has taken it past one)
       if (glide.soft && glide.kind !== 'walk' && glide.absorbed >= Math.max(120, 0.6 * Math.abs(glide.X))) { release(); return true; }
       const prog = (t - glide.t0) / (glide.T * 1000);
+      // A deliberate tick while a slide is under way — a notch on its own,
+      // TICK_GAP or more after the last (a wheel kept turning walks
+      // instead) — queues one more room, up to two past the one the page is
+      // passing: three clicks, three rooms; no deliberate tick is lost.
+      if (notch && !spin && since >= TICK_GAP && !driven && running() && !(fresh && (landed || prog >= 0.5))) {
+        const i = glide.idx + dir;
+        const passing = C.after(P, dir);
+        if (passing != null && (i - passing) * dir <= 2) {
+          if (i < 0 || i > N + 1) { release(); return true; }
+          note('queue', i);
+          plan(i, 'slide', 0, 2 * C.G.D);
+          if (glide) glide.absorbed = ad;
+        }
+        return absorb(event);
+      }
       if (fresh) {
         // a new push once a glide is well under way, or as it lands: one
         // more room; one right on top of the first is the same move

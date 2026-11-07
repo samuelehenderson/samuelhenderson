@@ -2,19 +2,20 @@
  * Digital Twin units — one ClarityView model in the twin.
  *
  *   createHost(unit, ctx) → host
- *     host.steps: embed → measure → freeze → bake → finish (each its own task; freeze
- *                 and bake are generators that hand the thread back every `budget` ms)
+ *     host.steps: embed → measure → bake → freeze → finish (each its own task; bake
+ *                 and freeze are generators that hand the thread back every `budget` ms)
  *     host.update(dt, now, f)   LOD choice + tick (LOD0 only); the tower plume
  *     host.pick(raycaster)      { id, d } against invisible boxes (unit, then sub-parts)
  *     host.boxOf(id)            level-local Box3 of the unit or a sub-part
  *     host.ports                { name: [x, y, z] } world, at the level's base height
- *     host.dispose()            device / air / plume resources (never view.destroy())
+ *     host.dispose()            everything under the holder, devices, air (never view.destroy())
  *
  * The view is built into a holder at the unit's placement (a curb under an AHU),
- * read through catalog accessFor() (has/resolve from sim.state), frozen to LOD0,
- * baked to LOD1, its materials patched for the level's dissolve and the bloom
- * gain, and picked against boxes, never its triangles. Any failing step turns
- * the unit into a proxy box with the same id, pick and bounds.
+ * read through catalog accessFor() (has/resolve from sim.state), baked to LOD1
+ * (curves at half the facets), frozen to LOD0, its materials patched for the
+ * level's dissolve and the bloom gain, and picked against boxes, never its
+ * triangles. Any failing step turns the unit into a proxy box with the same
+ * id, pick and bounds.
  *
  * Port names (for sim layout.ports, checked in DEV): AHU sa / ra / hws / hwr /
  * chws / chwr; CT-1 cws (cold out) / cwr (hot in); chillers chws / chwr / cws (CW
@@ -45,8 +46,8 @@ const PROXY_COLOR = { air: '#6d7c8c', water: '#5f7488' };
 const LOD_IN = 0.18;
 const LOD_OUT = 0.14;
 // x-ray silhouettes (B1, seen through the ground): only parts at least this big
-const XRAY_MIN = 0.5;
-const XRAY_CELL = 0.1;
+const XRAY_MIN = 0.8;
+const XRAY_CELL = 0.15;
 const AIR_IN = 0.3;
 const AIR_OUT = 0.25;
 
@@ -112,6 +113,7 @@ export function createHost(unit, ctx) {
   holder.add(seat);
   levelGroup.add(holder);
   const access = accessFor(unit, ref);
+  const airUnit = unit.cls === 'ahu';
   let towerFan = null;
 
   /* ── steps ─────────────────────────────────────────────────── */
@@ -220,7 +222,7 @@ export function createHost(unit, ctx) {
   function* doBake(budget) {
     const view = host.view;
     settle(view);
-    const r = yield* bakeIter(view.unit, { mats: shared.bakeMats, xrayMin: level.kind === 'plant' ? XRAY_MIN : 0, budget });
+    const r = yield* bakeIter(view.unit, { mats: shared.bakeMats, xrayMin: level.kind === 'plant' ? XRAY_MIN : 0, budget, coarse: true });
     const g = new Group();
     g.name = `lod1-${unit.id}`;
     g.position.copy(view.unit.position);
@@ -279,8 +281,10 @@ export function createHost(unit, ctx) {
       if (below || (m?.transparent && m.opacity < 0.6)) o.castShadow = false;
       else host.casters.push(o);
     });
-    // the embedded air stream, made now (hidden) so its program compiles with the rest
-    if (ctx.AirFlow && !unit.tower && unit.cls !== 'hhw' && !view.air) {
+    // the air handlers' air stream, made now (hidden) so its program compiles with the rest.
+    // Only the AHUs draw one: the plant families' streams (white ribbons in the pump headers)
+    // read as air and bloom; their water already moves in the service runs and the pumps turn
+    if (ctx.AirFlow && airUnit && !view.air) {
       view.air = new ctx.AirFlow(0);
       view.unit.add(view.air.points);
       view.air.points.scale.x = 1;
@@ -421,9 +425,9 @@ export function createHost(unit, ctx) {
    * LOD: the selected unit is always the live model (every tier); on the low
    * tier everything else is the baked copy; on the high tier the hovered unit is
    * live and the rest go by screen size (live at frac ≥ 0.18, back at < 0.14).
-   * Air (and the plant families' water streams) only on the high tier, after the
-   * level has revealed, without reduced motion, and only in a close-up: the
-   * unit selected or hovered, or filling a good part of the view (frac ≥ 0.3).
+   * Air streams (air handlers only) only on the high tier, after the level has
+   * revealed, without reduced motion, and only in a close-up: the unit selected
+   * or hovered, or filling a good part of the view (frac ≥ 0.3).
    */
   function update(dt, now, f) {
     const vis = holder.parent?.visible !== false && holder.visible;
@@ -460,7 +464,7 @@ export function createHost(unit, ctx) {
     const view = host.view;
     const close = sel || hov || (host.airClose ? frac >= AIR_OUT : frac >= AIR_IN);
     host.airClose = close;
-    view.showAir = !!f.airOk && close && !unit.tower && unit.cls !== 'hhw';
+    view.showAir = !!f.airOk && close && airUnit;
     if (!view.showAir && view.air) view.air.points.visible = false;
     view.update();
     view.tick(dt * (f.reducedMotion ? 0.3 : 1), now);
@@ -505,9 +509,18 @@ export function createHost(unit, ctx) {
     } catch {
       /* ignore */
     }
-    if (host.plume) {
-      host.plume.mesh.geometry.dispose();
-      host.plume.mat.dispose();
+    // everything under the holder (both LODs, curb, picks, plume): the world no longer reaches it
+    const res = new Set();
+    holder.traverse((o) => {
+      if (o.geometry) res.add(o.geometry);
+      for (const m of Array.isArray(o.material) ? o.material : o.material ? [o.material] : []) res.add(m);
+    });
+    for (const r of res) {
+      try {
+        r.dispose();
+      } catch {
+        /* ignore */
+      }
     }
     host.xray?.dispose?.();
     holder.removeFromParent();
@@ -517,8 +530,10 @@ export function createHost(unit, ctx) {
     steps: [
       ['embed', embed],
       ['measure', measure],
-      ['freeze', doFreeze],
+      // the bake reads the parts as ClarityView made them (its coarser curves need their
+      // parameters), so it runs before freeze merges the static ones
       ['bake', doBake],
+      ['freeze', doFreeze],
       ['finish', finish],
     ],
     toProxy,

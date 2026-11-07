@@ -15,13 +15,15 @@
  *   (f) nothing outside src/twin/units/ imports the mirror
  *   (g) with a ClarityView checkout: the mirror is byte-identical to the commit
  *       in VERSION
+ *   (h) each model's placement (x, y, z, rotY) is the sim layout's equipment
+ *       entry, and the pumps drawn inside a unit (CHWP-n, HWP-n) have it as parent
  *
  * INTERIM (until the sim replaces the boiler with the HHW-1 plant model, which
  * is builder 2's half of this change): while sim.state.plant.hhw is absent, (d)
  * lets the plant values the boiler cannot stand in for read non-finite (they
  * read unbound on the model: no loop dP, no second pump) and (e) reports
  * instead of failing. Both turn strict by themselves once the sim has P.hhw /
- * HHW-1. Exit code 1 on any failure.
+ * HHW-1; (h) likewise reports until the layout has HHW-1. Exit code 1 on any failure.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -108,6 +110,35 @@ const json = JSON.stringify(layout);
 const clean = !json.includes('"B-1"') && !/boiler/i.test(json);
 if (clean || hasHhw) ok(clean, 'the sim layout still mentions B-1 / boiler');
 else note('the sim layout still has B-1 (the boiler): pending the HHW-1 plant model in sim.js');
+
+/* (h) placements: the models stand where the sim's layout says (labels, runs and the footprint use it) */
+console.log('(h) catalog placements vs the sim layout');
+{
+  const layoutHhw = layout.equipment.some((e) => e.id === 'HHW-1');
+  const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+  const issues = [];
+  for (const u of UNITS) {
+    const e = layout.equipment.find((x) => x.id === u.id);
+    if (!e) {
+      issues.push(`${u.id} is not in the sim layout`);
+      continue;
+    }
+    const d = Math.hypot(e.x - u.x, e.y - u.y, e.z - u.z);
+    if (d > 0.05 || Math.abs(wrap((e.rotY || 0) - (u.rotY || 0))) > 1e-3) {
+      issues.push(`${u.id}: layout (${e.x}, ${e.y}, ${e.z}, rot ${+(e.rotY || 0).toFixed(3)}) vs model (${u.x}, ${u.y}, ${u.z}, rot ${+(u.rotY || 0).toFixed(3)})`);
+    }
+    // the pumps drawn inside a unit (CHWP-n on a chiller's skid, HWP-n in the plant) are its parts
+    for (const s of u.subs) {
+      const se = layout.equipment.find((x) => x.id === s.id);
+      if (!se || se.parent !== u.id || se.level !== u.level) issues.push(`${s.id}: layout parent ${se?.parent ?? '(none)'} on ${se?.level ?? '-'} (want ${u.id} on ${u.level})`);
+    }
+  }
+  if (layoutHhw) for (const m of issues) ok(false, m);
+  else {
+    pass++;
+    for (const m of issues) note(`${m} (pending the sim layout of design §2.2)`);
+  }
+}
 
 /* (f) only src/twin/units imports the mirror */
 console.log('(f) the mirror is imported only by src/twin/units/');

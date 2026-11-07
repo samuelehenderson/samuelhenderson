@@ -18,6 +18,7 @@
  */
 import {
   AdditiveBlending,
+  Box3,
   BoxGeometry,
   BufferAttribute,
   BufferGeometry,
@@ -56,10 +57,15 @@ import {
   patchReveal,
   rng,
   roofTexture,
+  smoothstep,
   thermalColor,
 } from './shared.js';
 
 const ZONE_TEX_W = 64;
+// VAV terminals: the full baked terminal within VAV_NEAR m of a level's terminals, its distant copy past VAV_FAR
+const VAV_NEAR = 40;
+const VAV_FAR = 50;
+const _vavBox = new Box3();
 const ZONE_TEX_H = 4;
 const PEOPLE_PER_ZONE = 5;
 
@@ -159,6 +165,8 @@ export function createWorld({ layout, levels, quality, modeU, ctxU }) {
   /* ── build every level ──────────────────────────────────────── */
   const levelGroups = [];
   const levelState = [];
+  // each level's storey height (to the next level up)
+  const storeyH = levels.list.map((L, i) => (levels.list[i + 1] ? levels.list[i + 1].y - L.y : 4));
   const pickZoneMeshes = [];
   const pickVavMeshes = [];
   const vavMeshes = [];
@@ -370,6 +378,7 @@ export function createWorld({ layout, levels, quality, modeU, ctxU }) {
       const vavs = new InstancedMesh(shareGeometry(vavGeo), mats.vav, n);
       own(vavs.geometry);
       const vZ = new Float32Array(n);
+      const vavSpan = new Box3(); // level-local: where this level's terminals hang (their distance LOD)
       lz.forEach((z, i) => {
         const p = z.vavPos || [(z.x0 + z.x1) / 2, L.y + 3.4, (z.z0 + z.z1) / 2];
         const run = layout.runs.find((r) => r.id === `sa-${z.id}`);
@@ -384,6 +393,7 @@ export function createWorld({ layout, levels, quality, modeU, ctxU }) {
         o.scale.set(1, 1, 1);
         o.updateMatrix();
         vavs.setMatrixAt(i, o.matrix);
+        vavSpan.expandByPoint(o.position);
         vZ[i] = zoneIndex.get(z.id);
       });
       const vZAttr = new InstancedBufferAttribute(vZ, 1);
@@ -396,7 +406,7 @@ export function createWorld({ layout, levels, quality, modeU, ctxU }) {
       vavPicks.frustumCulled = false;
       g.add(vavPicks);
       pickVavMeshes.push(vavPicks);
-      vavMeshes.push({ mesh: vavs, picks: vavPicks, aZone: vZAttr });
+      vavMeshes.push({ mesh: vavs, picks: vavPicks, aZone: vZAttr, li, span: vavSpan.expandByScalar(1), near: null, far: null, isFar: false });
 
       // occupants
       ls.people = buildPeople(g, personGeo, mats.person, lz, seats, zoneIndex, rand, own);
@@ -640,17 +650,57 @@ export function createWorld({ layout, levels, quality, modeU, ctxU }) {
         casters.push(m);
       }
     },
-    /** The baked VAV terminal (inlet collar at the origin, +x downstream) for every zone. */
-    setVavGeometry(geo, box) {
+    /**
+     * The baked VAV terminal (inlet collar at the origin, +x downstream) for every zone, and
+     * its distant copy (`far`, a few boxes): updateVavLod() swaps each level between them.
+     */
+    setVavGeometry(geo, box, far = null) {
       if (!geo) return;
       own(geo);
+      if (far) own(far);
       const pick = own(boxOf(box || (geo.computeBoundingBox(), geo.boundingBox)));
-      for (const v of vavMeshes) {
-        const g2 = shareGeometry(geo);
+      const withZone = (src, v) => {
+        const g2 = shareGeometry(src);
         g2.setAttribute('aZone', v.aZone);
-        own(g2);
-        v.mesh.geometry = g2;
+        return own(g2);
+      };
+      for (const v of vavMeshes) {
+        v.near = withZone(geo, v);
+        v.far = far ? withZone(far, v) : null;
+        v.isFar = false;
+        v.mesh.geometry = v.near;
         v.picks.geometry = pick;
+      }
+    },
+    /**
+     * Per frame, from the camera position:
+     * - distance LOD for the terminals, per level: past VAV_FAR metres from the nearest
+     *   terminal of a level (where one is a few pixels) that level draws the distant copy,
+     *   back to the full terminal inside VAV_NEAR;
+     * - the plant x-ray (the plant seen through the ground) fades out while the camera is
+     *   inside the plant room, where it would only glow through the models' own casings.
+     */
+    updateForCamera(camPos) {
+      for (let li = 0; li < levelState.length; li++) {
+        const ls = levelState[li];
+        if (!ls.xray) continue;
+        const top = levelGroups[li].position.y + storeyH[li];
+        const a = smoothstep(top - 0.3, top + 1.2, camPos.y);
+        ls.xray.material.uniforms.uAmt.value = a;
+        ls.xray.visible = ls.solidVis !== false && a > 0.001;
+      }
+      for (const v of vavMeshes) {
+        if (!v.far) continue;
+        _vavBox.copy(v.span);
+        const dy = levelGroups[v.li].position.y;
+        _vavBox.min.y += dy;
+        _vavBox.max.y += dy;
+        const d = _vavBox.distanceToPoint(camPos);
+        const isFar = v.isFar ? d > VAV_NEAR : d > VAV_FAR;
+        if (isFar !== v.isFar) {
+          v.isFar = isFar;
+          v.mesh.geometry = isFar ? v.far : v.near;
+        }
       }
     },
     /** B1 x-ray silhouettes, rebuilt from each plant unit's baked geometry ({ li, geometry } level-local). */

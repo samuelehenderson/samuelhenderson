@@ -10,8 +10,8 @@
  *     units.owner(id)               the host for a unit, alias or sub-part id
  *     units.setTier(t) / setPixelRatio(px) / afterCompile() / dispose()
  *
- * ref.state is sim.state (the sim mutates it in place). Build order: a small
- * warm-up air handler (off-scene), AHU-1, AHU-2, CT-1, CH-1, CH-2, CWP-1,
+ * ref.state is sim.state (the sim mutates it in place). Build order: two small
+ * warm-up air handlers (off-scene), AHU-1, AHU-2, CT-1, CH-1, CH-2, CWP-1,
  * HHW-1, then the VAV terminal. Each step is a
  * performance.measure('twin:unit:<id>:<step>') (kept in production; cheap).
  */
@@ -20,7 +20,7 @@ import { Ahu3DView } from '../../clarityview/ahu/3d/ahu3d.js';
 import { Tower3DView, CentrifugalChiller3DView, Booster3DView, Hhw3DView, Vav3DView } from '../../clarityview/ahu/3d/equip3d.js';
 import { AirFlow } from '../../clarityview/ahu/3d/airflow3d.js';
 import { disposeDeviceCache } from '../../clarityview/ahu/3d/siemens3d.js';
-import { UNITS, WARM, mapOf } from './catalog.js';
+import { UNITS, WARM, WARM2, mapOf } from './catalog.js';
 import { createHost, levelMaterials, pickMaterial } from './host.js';
 import { bakeMaterials } from './freeze.js';
 import { buildVavGeometry } from './vav.js';
@@ -98,14 +98,15 @@ export function createUnits({ layout, levels, world, tier = 'high', reducedMotio
 
   /**
    * The first model built pays for compiling ClarityView's builders and for the
-   * Siemens device geometry it caches: a small air handler (damper, filter,
-   * valved coil, fan, sensor), built off-scene in its own task, takes part of
-   * that cost out of AHU-1's embed. Its geometry is dropped; the device cache stays.
+   * Siemens device geometry it caches: two small air handlers (catalog WARM and
+   * WARM2, together the parts of AHU-1), built off-scene as two tasks, take that
+   * cost out of AHU-1's embed so no one task carries all of it. Their geometry is
+   * dropped; the device cache stays.
    */
-  function warmUp(li) {
-    const view = new Ahu3DView({ title: 'warm-up', config: WARM.config, kind: 'ahu', rhAfterFans: true });
+  function warmUp(li, warm) {
+    const view = new Ahu3DView({ title: 'warm-up', config: warm.config, kind: 'ahu', rhAfterFans: true });
     const g = new Group();
-    const map = mapOf(WARM);
+    const map = mapOf(warm);
     view.embed(g, 'warm.', (s) => map.has(s), () => null, sharedFor(li).mats);
     g.traverse((o) => {
       if (o.geometry && !o.geometry.userData?.shared) o.geometry.dispose();
@@ -116,7 +117,10 @@ export function createUnits({ layout, levels, world, tier = 'high', reducedMotio
     const t0 = performance.now();
     try {
       const li = levels.byId.get(UNITS[0].level);
-      if (li !== undefined) await step('warm', 'embed', () => warmUp(li), yieldFn);
+      if (li !== undefined) {
+        await step('warm', 'embed', () => warmUp(li, WARM), yieldFn);
+        await step('warm2', 'embed', () => warmUp(li, WARM2), yieldFn);
+      }
     } catch (err) {
       if (dev) console.warn('[twin units]', 'warm-up', err);
     }
@@ -145,14 +149,15 @@ export function createUnits({ layout, levels, world, tier = 'high', reducedMotio
       hosts.push(host);
       for (const id of [unit.id, ...(unit.aliases || []), ...host.subs.map((s) => s.id)]) byId.set(id, host);
       world.addUnit(host);
-      host.setLod(curTier === 'high' ? 0 : 1, performance.now());
+      // every unit starts as its baked copy: the first frame picks by screen size (no hysteresis yet)
+      host.setLod(1, performance.now());
     }
     // the VAV terminal, baked once for every zone
     try {
       const li = levels.list.findIndex((l) => l.kind === 'office');
       await step('VAV', 'bake', () => {
         vav = buildVavGeometry(Vav3DView, sharedFor(Math.max(0, li)).mats, { tier: curTier });
-        world.setVavGeometry(vav.geometry, vav.box);
+        world.setVavGeometry(vav.geometry, vav.box, vav.far);
       }, yieldFn);
     } catch (err) {
       if (dev) console.warn('[twin units]', 'VAV', err);
@@ -164,7 +169,8 @@ export function createUnits({ layout, levels, world, tier = 'high', reducedMotio
       if (dev) console.warn('[twin units]', 'x-ray', err);
     }
     timings.push({ id: 'all', step: 'wall', ms: +(performance.now() - t0).toFixed(1) });
-    if (dev) checkPorts();
+    // (compiled out of production builds: the dev server runs it)
+    if (import.meta.env?.DEV && dev) checkPorts();
   }
 
   /** DEV: the live models' nozzles and collars against the sim's layout.ports. */

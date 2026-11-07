@@ -1,7 +1,7 @@
 /**
  * Digital Twin units — the VAV terminal, built once and baked for all 60 zones.
  *
- *   buildVavGeometry(Vav3DView, mats, { tier }) → { geometry, box, tris, parts }
+ *   buildVavGeometry(Vav3DView, mats, { tier }) → { geometry, far, box, tris, farTris, pieces }
  *
  * ClarityView's 12" single-duct HW-reheat terminal (catalog VAV) is embedded
  * into an off-scene group with no bindings (nothing moves, no air), then baked
@@ -16,6 +16,10 @@
  * so every zone keeps its pick, hover, alarm and reheat glow, one draw per level.
  * Low tier keeps only parts with a bbox diagonal ≥ 0.12 m within 400 tris (the
  * finest detail is dropped first), else a box the size of the casing.
+ * `far` is the distant copy (the world swaps a level's terminals to it once the
+ * camera is well away, where a terminal is a few pixels): each big part
+ * (diagonal ≥ 0.4 m: casing, coil, discharge plenum, inlet) as its own box in
+ * its own colour and part, plus the diffuser; about 100 triangles.
  */
 import { Box3, BoxGeometry, BufferAttribute, Color, Group, Matrix4, Vector3 } from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
@@ -26,6 +30,7 @@ const GALV = new Color('#8f99a3');
 const DIFFUSER = new Color('#a6b0bb');
 const LOW_DIAG = 0.12;
 const LOW_TRIS = 400;
+const FAR_DIAG = 0.4;
 
 function withPart(g, part) {
   const n = g.attributes.position.count;
@@ -83,7 +88,8 @@ export function buildVavGeometry(Vav3DView, mats, { tier = 'high' } = {}) {
       p.computeBoundingBox();
       bb.copy(p.boundingBox);
       const diag = bb.max.distanceTo(bb.min);
-      pieces.push({ g: withPart(asCol(p), part), diag, tris: trisOf(p), name: o.userData?.pick?.title || o.name || m.name || m.color?.getHexString?.() });
+      const col = p.attributes.color ? [p.attributes.color.getX(0), p.attributes.color.getY(0), p.attributes.color.getZ(0)] : [0.56, 0.6, 0.64];
+      pieces.push({ g: withPart(asCol(p), part), bb: bb.clone(), col, part, diag, tris: trisOf(p), name: o.userData?.pick?.title || o.name || m.name || m.color?.getHexString?.() });
     });
   });
   // casing extents (for the low-tier fallback box and the pick box)
@@ -129,6 +135,24 @@ export function buildVavGeometry(Vav3DView, mats, { tier = 'high' } = {}) {
     }
   }
   const all = [...keep.map((p) => p.g), ...diff];
+  // the distant copy: the big parts as boxes (their own colour and part) and the diffuser
+  const farParts = pieces
+    .filter((p) => p.diag >= FAR_DIAG)
+    .map((p) => {
+      const s = p.bb.getSize(new Vector3()).max(new Vector3(0.02, 0.02, 0.02));
+      const c = p.bb.getCenter(new Vector3());
+      const b = new BoxGeometry(s.x, s.y, s.z).translate(c.x, c.y, c.z);
+      b.deleteAttribute('uv');
+      const n = b.attributes.position.count;
+      const col = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) col.set(p.col, i * 3);
+      b.setAttribute('aCol', new BufferAttribute(col, 3));
+      return withPart(b, p.part);
+    });
+  const far = mergeGeometries([...farParts, ...diff]);
+  farParts.forEach((b) => b.dispose());
+  far.computeBoundingBox();
+  far.computeBoundingSphere();
   const geometry = mergeGeometries(all);
   for (const p of pieces) p.g.dispose();
   diff.forEach((d) => d.dispose());
@@ -144,5 +168,5 @@ export function buildVavGeometry(Vav3DView, mats, { tier = 'high' } = {}) {
   g.traverse((o) => {
     if (o.geometry && !o.geometry.userData?.shared) o.geometry.dispose();
   });
-  return { geometry, box: full, tris: trisOf(geometry), pieces: keep.length, list: pieces.map((p) => [p.name, +p.diag.toFixed(2), p.tris]) };
+  return { geometry, far, box: full, tris: trisOf(geometry), farTris: trisOf(far), pieces: keep.length };
 }

@@ -64,20 +64,38 @@ function cwpConfig() {
 const HHW_CONFIG = hhwConfig({ exchangers: 2, pumps: 2, valves: 'split', bypass: true, pumpProof: true, program: false }, { tag: 'HHW' });
 
 /**
- * A small air handler built off-scene before AHU-1 (units/index.js warmUp): it takes the
- * one-time cost of ClarityView's builders and Siemens device geometry out of AHU-1's task.
+ * Two small air handlers built off-scene before AHU-1 (units/index.js warmUp), each its own
+ * task: together they take the one-time cost of ClarityView's builders (code warm-up) and of
+ * the Siemens device geometry it caches out of AHU-1's task, so no single build step carries
+ * it. WARM: damper, pre-filter, cooling coil and valve, one supply fan, SAT. WARM2 is the
+ * rest of AHU-1: return module with its fans, mixing damper, final filter, heating coil and
+ * valve, the other sensors and the air stations.
  */
+const oneFan = (c) => {
+  const fan = c.supply.find((s) => s.device === 'fan');
+  if (fan) {
+    fan.count = 1;
+    fan.fans = fan.fans.slice(0, 1);
+  }
+  return c;
+};
 export const WARM = (() => {
   const c = clone(DEFAULT_AHU);
   const keep = ['OA Damper', 'Pre-Filter', 'Cooling Coil', 'Supply Fans', 'Discharge'];
   c.supply = c.supply.filter((s) => keep.includes(s.label));
-  const fan = c.supply.find((s) => s.device === 'fan');
-  fan.count = 1;
-  fan.fans = fan.fans.slice(0, 1);
+  oneFan(c);
   delete c.return;
   c.sensors = c.sensors.filter((s) => s.tag === 'SAT');
   c.airStations = [];
   return { id: '__warm', config: c };
+})();
+export const WARM2 = (() => {
+  const c = ahuConfig('left');
+  const keep = ['Mixing', 'Final Filter', 'Heating Coil', 'Discharge'];
+  c.supply = c.supply.filter((s) => keep.includes(s.label) || s.device === 'fan');
+  oneFan(c);
+  c.sensors = c.sensors.filter((s) => s.tag !== 'SAT');
+  return { id: '__warm2', config: c };
 })();
 
 /** The VAV terminal: ClarityView's 12" single-duct box with HW reheat on a DXR2. */

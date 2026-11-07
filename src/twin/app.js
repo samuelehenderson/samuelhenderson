@@ -774,6 +774,8 @@ export async function mountTwin({ stage, canvasHost, hud, sim, reducedMotion = f
       controls.update(dt);
     }
     updateCamera(dt, now);
+    // the VAV terminals' distance LOD, and the plant x-ray off while the camera is in the plant room
+    world.updateForCamera(camera.position);
 
     // units: LOD by screen size (the selected / hovered one always full), live ticks on LOD0
     if (units) {
@@ -983,6 +985,8 @@ export async function mountTwin({ stage, canvasHost, hud, sim, reducedMotion = f
     api.debugView = (v) => {
       tween = null;
       userMoved = true;
+      // scripted close-ups may come nearer than a visitor can orbit (restored by a pose without it)
+      controls.minDistance = v.minDistance ?? 16;
       const r = currentRig();
       placeCtrlCam(v.target ? new Vector3(...v.target) : r.target.clone(), v.theta ?? r.theta, v.phi ?? r.phi, v.radius ?? r.radius);
     };

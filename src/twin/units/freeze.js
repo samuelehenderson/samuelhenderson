@@ -3,7 +3,8 @@
  *
  *   probe(view)                         what moves / changes when the values move
  *   freeze(view, { canon })             merge every static mesh per (rigid body, material)
- *   bake(root, { mats })                everything at its current pose → ≤ 3 vertex-coloured draws
+ *   bake(root, { mats, coarse })        everything at its current pose → ≤ 3 vertex-coloured draws
+ *   coarser(geometry)                   a parametric curve with about half the facets (LOD1)
  *   expandInstances(mesh, fn)           helper: each instance's matrix
  *
  * Generic on purpose: nothing here enumerates a family's parts. The probe drives
@@ -72,6 +73,18 @@ export function probe(view) {
     (s) => ({ value: flt.test(s) ? 1 : 50, status: 'normal' }),
     (s) => ({ value: flt.test(s) ? 0 : 35, status: 'normal' }),
   ];
+  // compared after every phase, not only the last: a part whose last-phase state happens
+  // to equal its live state (a damper the sim holds at 35 %) still moved in between
+  const moved = new Set();
+  const liveMats = new Set();
+  const look = () => {
+    // anything the probe added (it should add nothing: air is off) is treated as moving
+    root.traverse((o) => {
+      const a = snap.get(o);
+      if (!a || !o.position.equals(a.p) || !o.quaternion.equals(a.q) || !o.scale.equals(a.s) || o.visible !== a.v || o.material !== a.m) moved.add(o);
+    });
+    for (const m of mats) if (!liveMats.has(m) && matState(m) !== msnap.get(m)) liveMats.add(m);
+  };
   try {
     for (const ph of phases) {
       view._resolveLive = ph;
@@ -81,6 +94,7 @@ export function probe(view) {
         now += 400;
         view.tick(0.4, now);
       }
+      look();
     }
   } finally {
     view._resolveLive = live;
@@ -88,14 +102,6 @@ export function probe(view) {
     view.dirty = true;
     view._lastValues = -1e9;
   }
-  // anything the probe added (it should add nothing: air is off) is treated as moving
-  const moved = new Set();
-  root.traverse((o) => {
-    const a = snap.get(o);
-    if (!a || !o.position.equals(a.p) || !o.quaternion.equals(a.q) || !o.scale.equals(a.s) || o.visible !== a.v || o.material !== a.m) moved.add(o);
-  });
-  const liveMats = new Set();
-  for (const m of mats) if (matState(m) !== msnap.get(m)) liveMats.add(m);
   root.traverse((o) => {
     if (moved.has(o)) for (const m of matsOf(o)) liveMats.add(m);
   });
@@ -319,6 +325,71 @@ export function bakeMaterials() {
   };
 }
 
+/*
+ * LOD1 re-tessellation. The baked copy is seen small (or, on phones, in place of the live
+ * model), so its curved parts can carry half the facets: a parametric geometry (torus,
+ * sphere, cylinder, cone, capsule, tube, lathe, circle, ring) is rebuilt with about half the
+ * segments. Only when the mesh's geometry is exactly what its parameters generate: one that
+ * was translated, rotated, scaled or re-coloured after it was made is kept as it is (it is
+ * regenerated with the same parameters and compared vertex by vertex).
+ */
+const half = (n, min) => Math.max(min, Math.ceil((n || min) / 2));
+const COARSE = {
+  TorusGeometry: (p) => [[p.radius, p.tube, p.radialSegments, p.tubularSegments, p.arc], [p.radius, p.tube, half(p.radialSegments, 4), half(p.tubularSegments, 8), p.arc]],
+  SphereGeometry: (p) => [
+    [p.radius, p.widthSegments, p.heightSegments, p.phiStart, p.phiLength, p.thetaStart, p.thetaLength],
+    [p.radius, half(p.widthSegments, 8), half(p.heightSegments, 5), p.phiStart, p.phiLength, p.thetaStart, p.thetaLength],
+  ],
+  CylinderGeometry: (p) => [
+    [p.radiusTop, p.radiusBottom, p.height, p.radialSegments, p.heightSegments, p.openEnded, p.thetaStart, p.thetaLength],
+    [p.radiusTop, p.radiusBottom, p.height, half(p.radialSegments, 8), 1, p.openEnded, p.thetaStart, p.thetaLength],
+  ],
+  ConeGeometry: (p) => [
+    [p.radius, p.height, p.radialSegments, p.heightSegments, p.openEnded, p.thetaStart, p.thetaLength],
+    [p.radius, p.height, half(p.radialSegments, 8), 1, p.openEnded, p.thetaStart, p.thetaLength],
+  ],
+  CapsuleGeometry: (p) => [[p.radius, p.length, p.capSegments, p.radialSegments], [p.radius, p.length, half(p.capSegments, 2), half(p.radialSegments, 8)]],
+  TubeGeometry: (p) => [[p.path, p.tubularSegments, p.radius, p.radialSegments, p.closed], [p.path, half(p.tubularSegments, 4), p.radius, half(p.radialSegments, 6), p.closed]],
+  LatheGeometry: (p) => [[p.points, p.segments, p.phiStart, p.phiLength], [p.points, half(p.segments, 8), p.phiStart, p.phiLength]],
+  CircleGeometry: (p) => [[p.radius, p.segments, p.thetaStart, p.thetaLength], [p.radius, half(p.segments, 8), p.thetaStart, p.thetaLength]],
+  RingGeometry: (p) => [
+    [p.innerRadius, p.outerRadius, p.thetaSegments, p.phiSegments, p.thetaStart, p.thetaLength],
+    [p.innerRadius, p.outerRadius, half(p.thetaSegments, 8), 1, p.thetaStart, p.thetaLength],
+  ],
+};
+const coarseCache = new WeakMap();
+/** A coarser copy of a parametric geometry (see above), or null to keep the original. */
+export function coarser(geo) {
+  if (!geo || !geo.parameters || geo.attributes.color || geo.morphAttributes?.position) return null;
+  if (coarseCache.has(geo)) return coarseCache.get(geo);
+  let out = null;
+  const spec = COARSE[geo.type];
+  try {
+    if (spec) {
+      const Ctor = geo.constructor;
+      const [same, less] = spec(geo.parameters);
+      const ref = new Ctor(...same);
+      const a = geo.attributes.position;
+      const b = ref.attributes.position;
+      let match = a.count === b.count && !!geo.index === !!ref.index;
+      for (let i = 0; match && i < a.count; i++) {
+        if (Math.abs(a.getX(i) - b.getX(i)) > 1e-5 || Math.abs(a.getY(i) - b.getY(i)) > 1e-5 || Math.abs(a.getZ(i) - b.getZ(i)) > 1e-5) match = false;
+      }
+      ref.dispose();
+      if (match) {
+        const c = new Ctor(...less);
+        const n = (g) => (g.index ? g.index.count : g.attributes.position.count);
+        if (n(c) < n(geo)) out = c;
+        else c.dispose();
+      }
+    }
+  } catch {
+    out = null;
+  }
+  coarseCache.set(geo, out);
+  return out;
+}
+
 const _col = new Color();
 /**
  * Prepares one mesh's geometry for a bake, in `root`'s frame: position, normal
@@ -327,9 +398,9 @@ const _col = new Color();
  * is a static copy and never claims a running fan or an open valve.
  * Returns an indexed geometry (or null).
  */
-export function bakePiece(o, rel, { line = false, colorOverride = null } = {}) {
+export function bakePiece(o, rel, { line = false, colorOverride = null, coarse = false } = {}) {
   const m = Array.isArray(o.material) ? o.material[0] : o.material;
-  const src = o.geometry;
+  const src = (coarse && !line && coarser(o.geometry)) || o.geometry;
   if (!src?.attributes?.position) return null;
   const g = src.clone();
   for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'color'].includes(k)) g.deleteAttribute(k);
@@ -373,7 +444,9 @@ export function bakePiece(o, rel, { line = false, colorOverride = null } = {}) {
 /**
  * LOD1: every visible mesh and line under root (moving parts at their current
  * pose, instanced meshes expanded) merged into at most three objects in root's
- * own frame: opaque, glass (opacity < 0.6) and outlines. The caller gives the
+ * own frame: opaque, glass (opacity < 0.6) and outlines. With `coarse`, curved
+ * parametric parts are re-tessellated with about half the facets (coarser()):
+ * bake before freeze, which merges those geometries away. The caller gives the
  * returned group root's local transform (a mirrored unit stays mirrored in its
  * object matrix, where three fixes the winding).
  * Also returns `xray`: the opaque parts with a bbox diagonal ≥ xrayMin, position + normal only.
@@ -383,7 +456,7 @@ export function bake(root, opts) {
 }
 
 /** bake() as a generator: yields between pieces once `budget` ms have passed. */
-export function* bakeIter(root, { mats, xrayMin = 0.25, skip = null, budget = Infinity } = {}) {
+export function* bakeIter(root, { mats, xrayMin = 0.25, skip = null, budget = Infinity, coarse = false } = {}) {
   const slice = sliceClock(budget);
   root.updateMatrixWorld(true);
   const inv = new Matrix4().copy(root.matrixWorld).invert();
@@ -407,7 +480,7 @@ export function* bakeIter(root, { mats, xrayMin = 0.25, skip = null, budget = In
     rel.multiplyMatrices(inv, o.matrixWorld);
     eachInstance(o, (im) => {
       const r = im ? relI.multiplyMatrices(rel, im) : rel;
-      const g = bakePiece(o, r, { line: kind === 'line' });
+      const g = bakePiece(o, r, { line: kind === 'line', coarse });
       if (!g) return;
       groups[kind].push(g);
       if (kind === 'solid' && xrayMin > 0) {

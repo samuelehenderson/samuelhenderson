@@ -9,7 +9,8 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger';
  *
  *   ../twin/hud.js  DOM heads-up display (tiny)
  *   ../twin/sim.js  headless building simulation
- *   ../twin/app.js  three.js scene (the only module that imports three)
+ *   ../twin/app.js  three.js scene
+ *   ../twin/units/  ClarityView's equipment models (the units chunk; three is shared with app.js)
  *
  * Nothing loads until the section is within one viewport of the screen,
  * so the initial bundle doesn't grow.
@@ -269,8 +270,10 @@ export function initTwin({ reducedMotion = false } = {}) {
     const hudP = import('../twin/hud.js');
     const simP = import('../twin/sim.js');
     const appP = import('../twin/app.js');
+    // the equipment models download in parallel with the app (mountTwin awaits them)
+    const unitsP = import('../twin/units/index.js');
     // Mark as handled up front; failures are caught where they're awaited.
-    for (const p of [hudP, simP, appP]) p.catch(() => {});
+    for (const p of [hudP, simP, appP, unitsP]) p.catch(() => {});
 
     try {
       const { createHud } = await hudP;
@@ -285,7 +288,8 @@ export function initTwin({ reducedMotion = false } = {}) {
       hud.setLoading(frac);
       hud.setIntroProgress(progress);
       simP.then(() => bump(0.12), () => {});
-      appP.then(() => bump(0.55), () => {});
+      appP.then(() => bump(0.4), () => {});
+      unitsP.then(() => bump(0.15), () => {});
 
       const [{ createSim }, { mountTwin }] = await Promise.all([simP, appP]);
       if (destroyed) return;
@@ -293,7 +297,7 @@ export function initTwin({ reducedMotion = false } = {}) {
       sim = createSim({ seed: 7, startHour: 9.5 });
       hud.setState(sim.state, sim.layout);
 
-      const mounted = await mountTwin({ stage, canvasHost, hud, sim, reducedMotion, coarsePointer });
+      const mounted = await mountTwin({ stage, canvasHost, hud, sim, reducedMotion, coarsePointer, unitsP });
       if (destroyed) {
         safe(() => mounted?.destroy?.());
         return;

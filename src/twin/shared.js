@@ -211,6 +211,64 @@ export function patchReveal(material, revealUniform) {
   return material;
 }
 
+/**
+ * The unit (ClarityView model) variant of patchReveal: the dissolve front is
+ * measured in world space less the level's current origin (uLevelY, updated
+ * with the intro drop and Exploded), so nested moving parts dissolve with the
+ * casing instead of in their own local frame; and emissive radiance is scaled
+ * by uUnitGlow (0.5 under bloom) so ClarityView's status bands read as small
+ * lights. The program key keeps the material's own key (or its original
+ * onBeforeCompile source) so two different original shaders never share a
+ * program. Idempotent per material; returns the patch record.
+ */
+const UNIT_PATCHED = new WeakMap();
+export function unitPatchOf(material) {
+  return UNIT_PATCHED.get(material) || null;
+}
+export function patchUnitMaterial(material, { reveal, levelY, glow, level = 0, orig = null }) {
+  const had = UNIT_PATCHED.get(material);
+  if (had) return had;
+  // capture the original before patching (a clone for another level passes the first one's)
+  const base = orig || { obc: material.onBeforeCompile, key: material.customProgramCacheKey() };
+  const prev = base.obc;
+  material.onBeforeCompile = function (shader, renderer) {
+    prev.call(this, shader, renderer);
+    shader.uniforms.uReveal = reveal;
+    shader.uniforms.uLevelY = levelY;
+    shader.uniforms.uUnitGlow = glow;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vBuildP;\nuniform float uLevelY;')
+      .replace(
+        '#include <project_vertex>',
+        `#include <project_vertex>
+        vec4 bP = vec4(transformed, 1.0);
+        #ifdef USE_INSTANCING
+          bP = instanceMatrix * bP;
+        #endif
+        vBuildP = (modelMatrix * bP).xyz - vec3(0.0, uLevelY, 0.0);`,
+      );
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>\nvarying vec3 vBuildP;\nuniform float uReveal;\nuniform float uUnitGlow;\n${GLSL_NOISE}`)
+      .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>\n${GLSL_DISSOLVE}`);
+    if (shader.fragmentShader.includes('#include <emissivemap_fragment>')) {
+      shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <emissivemap_fragment>',
+        `#include <emissivemap_fragment>\n totalEmissiveRadiance *= uUnitGlow;\n totalEmissiveRadiance += ${DISSOLVE_GLOW} * bEdge;`,
+      );
+    } else {
+      shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <opaque_fragment>',
+        `outgoingLight += ${DISSOLVE_GLOW} * bEdge;\n#include <opaque_fragment>`,
+      );
+    }
+  };
+  material.customProgramCacheKey = () => `unit|${base.key}`;
+  material.needsUpdate = true;
+  const rec = { level, base };
+  UNIT_PATCHED.set(material, rec);
+  return rec;
+}
+
 /* ── data textures ───────────────────────────────────────────────── */
 
 export function makeDataTexture(width, height) {

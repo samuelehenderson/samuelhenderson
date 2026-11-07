@@ -71,6 +71,19 @@
 [data-sky="dawn"] .view-tint--dawn,
 [data-sky="dusk"] .view-tint--dusk { display: inline; }
 
+/* Falling snow over the glass (src/scenes/hero-window.js) */
+.hero__snow {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  /* its own compositor layer: a frame of snow never repaints the view SVG */
+  will-change: transform;
+  opacity: 0;
+  transition: opacity 1.8s ease;
+}
+.hero__snow.is-on { opacity: 1; }
+
 /* Ambient glow from the monitor and lamp washing the room */
 .scene--hero::before {
   content: "";

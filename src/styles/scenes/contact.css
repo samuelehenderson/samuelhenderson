@@ -544,10 +544,10 @@
     min-height: 100vh;
     /* both side walls in view, the window a little left of centre, and
        ~70% of the monitor at the right edge, crossing the corner of the
-       back wall (as on desktop) */
+       back wall (as on desktop); the ceiling's corners clear the header */
     --u: calc(100 * var(--cqw) / 960);
     --ax: calc(41 * var(--cqw) - 731 * var(--u));
-    --ay: calc(var(--header-h) + 22px - 151 * var(--u));
+    --ay: calc(var(--header-h) + 38px - 151 * var(--u));
   }
   .contact__stage::after {
     background: linear-gradient(180deg, transparent 0, transparent calc(var(--ay) + 520 * var(--u)), rgba(3, 4, 12, 0.6) calc(var(--ay) + 760 * var(--u)), var(--cx-night) 100%);

@@ -1,121 +1,1354 @@
-import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 
 /**
  * Scene 3 — Horizontal Gallery (Project Rooms)
  *
  * Default markup is a vertical stack of <article class="room">. On
- * capable devices we add .gallery--horizontal and wire ScrollTrigger
- * to convert vertical scroll into horizontal panning. Per-room
- * parallax sublayers ride the master tween via containerAnimation.
+ * capable devices we add .gallery--horizontal: the section grows tall,
+ * its inner stage sticks to the viewport (plain CSS sticky — no JS pin,
+ * so nothing jumps when it engages) and vertical scroll pans the rooms
+ * sideways.
  *
- * Under prefers-reduced-motion or in browsers without GSAP wiring,
- * the page falls back to the vertical stack — fully readable.
+ * The picture is a pure function of the scroll position (render):
+ *   - the rooms track moves 1:1 with the scroll;
+ *   - the corner is a quarter-circle in velocity: over the last stretch
+ *     of the approach the rooms' upward motion bends into the sideways
+ *     pan at the same speed, so there is no stop and no lurch. The exit
+ *     into Selected Work bends back the same way (with a radius small
+ *     enough that the last room's text never crosses the screen edge),
+ *     and both run in reverse;
+ *   - while the gallery rises over the Dive's last frame it is see-through
+ *     and fades in its backdrop together with the Dive's copy of it, so
+ *     both sides of the rising edge always show the same picture.
+ *
+ * How the page moves through it is decided by a small controller, the
+ * same idea on desktop (Lenis wheel) and phones (native touch): inside
+ * the gallery the page only comes to rest on a "station" — the corner's
+ * start, a room, or the corner's end. One gesture moves one station, as
+ * one glide that starts at the speed the page already has and lands
+ * exactly (never past it and back) — on desktop our own glide, on phones
+ * the browser's own fling landing on CSS snap points (a flick the finger
+ * has dragged past a room — or, at speed, nearly past it — lands on the
+ * next), or our own glide for a finger that lets go slowly. A gesture
+ * coming in from outside is landed on the first room it meets; a gesture
+ * going out past an end station turns back into plain scrolling. A wheel
+ * kept spinning walks on, room by room, straight through the corner, at
+ * an even speed — about the wheel's, a little behind it — and stops on
+ * the room nearest where the wheel has taken it that it can still slow
+ * down onto (never past it and back). Links and hash loads to the
+ * gallery land on its first room, and a link's glide is never taken over
+ * on the way. Content reveals once per room on arrival — time-based,
+ * never tied to scroll, so text is never ghosted.
+ *
+ * Under prefers-reduced-motion the page keeps the vertical stack.
  */
+
+const HALF_PI = Math.PI / 2;
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const smoothstep = (a, b, v) => {
+  const t = clamp((v - a) / (b - a), 0, 1);
+  return t * t * (3 - 2 * t);
+};
+
+// Velocity-matched glide curve: starts at slope m0 (the speed the page
+// already has, as a fraction of distance / duration), ends at rest with
+// zero acceleration. m0 = 0 is smootherstep, m0 = 2 a pure, smooth
+// deceleration; m0 < 0 (the page was moving the other way) first carries
+// on a little before coming back.
+const settleEase = (t, m0) =>
+  m0 * t + (10 - 6 * m0) * t ** 3 + (8 * m0 - 15) * t ** 4 + (6 - 3 * m0) * t ** 5;
+const MAX_M0 = 2;
+const MIN_M0 = -1.5;
+
+// A wheel kept turning (a 'walk'): over dist px the page eases from the
+// speed it has (v0) to the cruise speed vc — in at most a short moment, at
+// no more than WALK_ACC — holds it, and only over its last moment (about a
+// third of a second, a little longer from speed) slows onto the station (at
+// rest, with no jolt at either end). The walk is re-planned at every notch,
+// so while the wheel turns it never gets that far. null: too short for it
+// (the caller lands instead).
+const WALK_ACC = 2500;
+function walkCurve(dist, v0, vc) {
+  v0 = Math.max(0, v0);
+  if (!(vc > 0) || !(dist > 0)) return null;
+  const tA = clamp((2 * Math.abs(vc - v0)) / WALK_ACC, 0.08, 0.6);
+  const dA = tA * (v0 + (2 * (vc - v0)) / 3);
+  const tC = clamp(0.18 + vc / 4000, 0.26, 0.45);
+  const dC = (vc * tC) / 2;
+  const dB = dist - dA - dC;
+  if (dB < 0) return null;
+  const tB = dB / vc;
+  const T = tA + tB + tC;
+  const ease = (u) => {
+    const t = u * T;
+    let x;
+    if (t <= tA) { const w = t / tA; x = v0 * t + (vc - v0) * tA * (w * w - (w * w * w) / 3); }
+    else if (t <= tA + tB) x = dA + vc * (t - tA);
+    else { const w = Math.min(1, (t - tA - tB) / tC); x = dA + dB + vc * tC * (w - w * w * w + (w * w * w * w) / 2); }
+    return x / dist;
+  };
+  return { T, ease, tStop: tA + tB };
+}
+// the curve's top speed, as a multiple of distance / duration
+const peakOf = (m0) => {
+  let p = 0;
+  for (let i = 0; i <= 24; i++) {
+    const u = i / 24;
+    p = Math.max(p, m0 + 3 * (10 - 6 * m0) * u * u + 4 * (8 * m0 - 15) * u ** 3 + 5 * (6 - 3 * m0) * u ** 4);
+  }
+  return p;
+};
+
+const REVEAL_SEL =
+  '.room__number, .room__heading, .room__lead, ' +
+  '.room__chips > *, .room__cards > *, .room__timeline > *, .room__columns';
+
 export function initGallery({ reducedMotion, lenis }) {
   const scene = document.querySelector('[data-scene="gallery"]');
   if (!scene || reducedMotion) return;
 
+  const inner = scene.querySelector('.gallery__inner');
+  const bg    = scene.querySelector('.gallery__bg');
+  const bgArt = bg ? bg.querySelector('svg') : null;
   const track = scene.querySelector('.gallery__track');
-  const rooms = scene.querySelectorAll('.room');
-  const dots  = scene.querySelectorAll('.gallery__progress-dot');
-  if (!track || rooms.length === 0) return;
+  const rooms = [...scene.querySelectorAll('.room')];
+  const progress = scene.querySelector('.gallery__progress');
+  const cue   = scene.querySelector('.gallery__cue');
+  if (!inner || !track || rooms.length === 0) return;
+  // The Dive's copy of this backdrop (dive.js): faded in together with ours.
+  const handoff = document.querySelector('[data-scene="dive"] .dive__handoff');
 
-  // Switch the layout to horizontal-pin mode
   scene.classList.add('gallery--horizontal');
+  const N = rooms.length;
 
-  // Wait a frame so the layout reflows before measuring
-  requestAnimationFrame(() => {
-    const getDistance = () =>
-      track.scrollWidth - window.innerWidth;
+  // Scroll px per room, as a multiple of the room width. 1 = the pan moves
+  // exactly as fast as the page did, which keeps the corner a true circle.
+  let ROOM_SCROLL = 1;
+  if (import.meta.env.DEV) {
+    const r = parseFloat(new URLSearchParams(location.search).get('groom'));
+    if (r > 0) ROOM_SCROLL = r;
+  }
 
-    // Snap to each room center — prevents stopping mid-pan between rooms.
-    // 5 rooms = 4 equal segments between snap points = 1/4.
-    const snapStep = 1 / (rooms.length - 1);
-
-    // Master horizontal tween — drives everything else
-    const horizontalTween = gsap.to(track, {
-      x: () => -getDistance(),
-      ease: 'none',
-      scrollTrigger: {
-        trigger: scene,
-        pin: true,
-        scrub: 1,
-        start: 'top top',
-        end: () => `+=${getDistance()}`,
-        invalidateOnRefresh: true,
-        anticipatePin: 1,
-        snap: {
-          snapTo: snapStep,
-          duration: { min: 0.25, max: 0.55 },
-          delay: 0.08,
-          ease: 'power2.inOut',
-          directional: false,
-          // Pause Lenis during the snap tween so the smooth-scroller
-          // doesn't fight ScrollTrigger's programmatic scrollTo.
-          onStart:     () => { if (lenis) lenis.stop(); },
-          onComplete:  () => { if (lenis) lenis.start(); },
-          onInterrupt: () => { if (lenis) lenis.start(); },
-        },
-      },
-    });
-
-    // Per-room parallax — sub-layers shift relative to the room
-    // as it crosses the viewport horizontally.
-    rooms.forEach((room) => {
-      const layers = room.querySelectorAll('[data-parallax]');
-      layers.forEach((layer) => {
-        const factor = parseFloat(layer.dataset.parallax) || 0;
-        gsap.fromTo(layer,
-          { xPercent: factor * 50 * -1 },
-          {
-            xPercent: factor * 50,
-            ease: 'none',
-            scrollTrigger: {
-              trigger: room,
-              containerAnimation: horizontalTween,
-              start: 'left right',
-              end: 'right left',
-              scrub: true,
-            },
-          }
-        );
-      });
-
-      // Content reveal — staggers in as room pans toward center
-      const reveal = room.querySelectorAll(
-        '.room__number, .room__heading, .room__lead, ' +
-        '.room__chips > *, .room__cards > *, .room__timeline > *, .room__columns'
-      );
-      gsap.from(reveal, {
-        opacity: 0,
-        x: 60,
-        ease: 'power2.out',
-        stagger: 0.05,
-        scrollTrigger: {
-          trigger: room,
-          containerAnimation: horizontalTween,
-          start: 'left 75%',
-          end: 'left 30%',
-          scrub: 0.5,
-        },
-      });
-
-      // Active-dot toggle when a room is centered
-      const idx = parseInt(room.dataset.roomIndex, 10) - 1;
-      ScrollTrigger.create({
-        trigger: room,
-        containerAnimation: horizontalTween,
-        start: 'left center',
-        end: 'right center',
-        onEnter:     () => setActive(idx),
-        onEnterBack: () => setActive(idx),
-      });
-    });
-
-    function setActive(i) {
-      dots.forEach((d, j) => d.classList.toggle('is-active', i === j));
-    }
-    setActive(0);
+  rooms.forEach((room) => {
+    room.querySelectorAll(REVEAL_SEL).forEach((el, i) => el.style.setProperty('--reveal-i', i));
   });
+  const layers = rooms.map((room) =>
+    [...room.querySelectorAll('[data-parallax]')].map((el) => ({ el, f: parseFloat(el.dataset.parallax) || 0 })),
+  );
+
+  let steer = null;
+  const goTo = (station) => steer && steer.goTo(station);
+
+  // ── progress dots → buttons that go to their room ──────────────
+  let dots = [];
+  if (progress) {
+    dots = [...progress.querySelectorAll('.gallery__progress-dot')].map((old, i) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = old.className;
+      btn.dataset.room = old.dataset.room || String(i + 1);
+      const label = (rooms[i]?.querySelector('.room__number')?.textContent || '').split('·').pop().trim();
+      btn.setAttribute('aria-label', `Room ${i + 1} of ${N}${label ? `: ${label}` : ''}`);
+      btn.addEventListener('click', () => goTo(i + 1));
+      old.replaceWith(btn);
+      return btn;
+    });
+    progress.removeAttribute('aria-hidden');
+    progress.setAttribute('role', 'group');
+    progress.setAttribute('aria-label', 'Story rooms');
+  }
+
+  /* ── fit: a room whose content is taller than the screen is scaled to
+     fit (around its own centre) rather than clipped or made scrollable.
+     Also measures how far each room's text sits from its edges. ─────── */
+  const contents = rooms.map((room) => room.querySelector('.room__content'));
+  const fit = rooms.map(() => ({ s: 1, dx: 0 }));
+  const margin = rooms.map(() => ({ left: 0, right: 0 }));
+  function fitRooms() {
+    contents.forEach((el, i) => {
+      if (!el) return;
+      el.style.transform = '';
+      fit[i].s = 1;
+      fit[i].dx = 0;
+      const kids = [...el.children];
+      if (!kids.length) return;
+      const roomBox = rooms[i].getBoundingClientRect();
+      const box = el.getBoundingClientRect();
+      const rs = kids.map((k) => k.getBoundingClientRect());
+      margin[i].left = Math.min(...rs.map((r) => r.left)) - roomBox.left;
+      margin[i].right = roomBox.right - Math.max(...rs.map((r) => r.right));
+      const top = Math.min(...rs.map((r) => r.top));
+      const bottom = Math.max(...rs.map((r) => r.bottom));
+      const cs = getComputedStyle(el);
+      const avail = box.height - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+      const h = bottom - top;
+      if (h <= avail + 1) return;
+      const s = Math.max(0.7, avail / h);
+      fit[i].s = s;
+      el.style.transformOrigin = `0 ${((top + bottom) / 2 - box.top).toFixed(1)}px`;
+      el.style.transform = `scale(${s.toFixed(4)})`;
+    });
+  }
+  // Sideways nudge of a room's text against its room (see render).
+  function shiftContent(i, dx) {
+    const el = contents[i];
+    if (!el) return;
+    dx = Math.round(dx * 10) / 10;
+    if (dx === fit[i].dx) return;
+    fit[i].dx = dx;
+    const sc = fit[i].s < 1 ? `scale(${fit[i].s.toFixed(4)})` : '';
+    el.style.transform = dx ? `translate3d(${dx}px, 0, 0) ${sc}` : sc;
+  }
+
+  /* ── geometry ───────────────────────────────────────────────
+     s = scroll − top, where top is the scroll at which the stage sticks.
+       corner in   s ∈ [−aIn, bIn]          rooms rise aIn px while drifting k·aIn px left
+       room i      s = bIn + i·D            (the rests)
+       corner out  s ∈ [sN, sN + LcOut]     rise aOut px while drifting k·aOut px left
+     A quarter circle with unit speed covers a px vertically in Lc = π·a/2
+     of scroll, so b = Lc − a; the stage stays stuck for run = bIn + (N−1)·D + bOut.
+     The exit radius is sized so the last room's text never crosses the
+     left edge; where even that is too much (phones) the text is held
+     back against its room instead (render). */
+  const G = { top: 0, W: 0 };
+  function measure() {
+    const W = rooms[0].offsetWidth || window.innerWidth;
+    const H = window.innerHeight;
+    const D = Math.round(W * ROOM_SCROLL);
+    const k = W / D;
+    fitRooms();
+    const aIn = Math.round(Math.min(H * 0.24, W * 0.18));
+    const textL = margin[N - 1].left;
+    // where even 0.6·aIn would cut the text (phones: it fills the width)
+    // the text is held back against its room instead, so keep the full curve
+    const fitOut = (textL - 12) / k;
+    const aOut = Math.round(fitOut >= 0.6 * aIn ? Math.min(aIn, fitOut) : aIn);
+    const bIn = Math.round(aIn * (HALF_PI - 1));
+    const bOut = Math.round(aOut * (HALF_PI - 1));
+    const sN = bIn + (N - 1) * D;
+    const run = sN + bOut;
+    Object.assign(G, {
+      W, H, D, k, aIn, bIn, LcIn: aIn + bIn, aOut, bOut, LcOut: aOut + bOut, sN, run,
+      roomR: Math.max(0, margin[0].right - 8), // px the first room's text may drift right
+      roomL: Math.max(0, textL - 12),          // px the last room's text may drift left
+    });
+    scene.style.setProperty('--gallery-run', `${run}px`);
+    // the first room's rest is bIn below the section's top: a jump to the
+    // section (#story, a hash load) lands on it, not in the corner
+    scene.style.setProperty('--gallery-entry', `${bIn}px`);
+  }
+
+  // Stations, in page scroll px: 0 = the entry corner's start, 1..N the
+  // rooms, N + 1 = the exit corner's end. 0 and N + 1 are "soft": a gesture
+  // that keeps going past them just scrolls on.
+  const restOf = (i) => G.top + G.bIn + i * G.D;
+  function stations() {
+    const S = [G.top - G.aIn];
+    for (let i = 0; i < N; i++) S.push(restOf(i));
+    S.push(G.top + G.sN + G.LcOut);
+    return S;
+  }
+  const C = {
+    G, N, stations, scene,
+    isSoft: (i) => i === 0 || i === N + 1,
+    inside: (p) => { const S = stations(); return p >= S[0] - 1 && p <= S[N + 1] + 1; },
+    atStation: (p) => stations().some((v) => Math.abs(v - p) < 1.5),
+    // first station strictly beyond p in direction dir (null: none)
+    after(p, dir) {
+      const S = stations();
+      if (dir > 0) { for (let i = 0; i < S.length; i++) if (S[i] > p + 1.5) return i; }
+      else { for (let i = S.length - 1; i >= 0; i--) if (S[i] < p - 1.5) return i; }
+      return null;
+    },
+    nearest(p) {
+      const S = stations();
+      let b = 0;
+      S.forEach((v, i) => { if (Math.abs(v - p) < Math.abs(S[b] - p)) b = i; });
+      return b;
+    },
+    // first station at or beyond p in direction dir
+    atOrAfter(p, dir) {
+      const S = stations();
+      if (dir > 0) { for (let i = 0; i < S.length; i++) if (S[i] >= p - 1.5) return i; }
+      else { for (let i = S.length - 1; i >= 0; i--) if (S[i] <= p + 1.5) return i; }
+      return null;
+    },
+    // glide length: one room ≈ 0.95 s, shorter hops quicker
+    slideT: (dist) => 0.55 + 0.4 * Math.min(1.25, Math.abs(dist) / G.D),
+    refreshing: false,
+  };
+
+  /* ── render: everything is a pure function of the scroll ───── */
+  let active = -1;
+  let lastZone = NaN;
+  const revealed = new Set();
+  const styleCache = new WeakMap();
+  const set = (el, prop, value) => {
+    if (!el) return;
+    let c = styleCache.get(el);
+    if (!c) { c = {}; styleCache.set(el, c); }
+    if (c[prop] === value) return;
+    c[prop] = value;
+    el.style[prop] = value;
+  };
+  function render(y) {
+    const { W, H, k, aIn, bIn, LcIn, aOut, LcOut, sN, run } = G;
+    if (!W) return;
+    const s = y - G.top;
+    // Far above or below nothing changes: draw that state once, then skip.
+    const zone = s < -1.6 * H ? -1 : (s > run + 1.6 * H ? 1 : 0);
+    if (zone !== 0 && zone === lastZone) return;
+    lastZone = zone;
+
+    const innerTop = s < 0 ? -s : (s > run ? run - s : 0);
+    let x, ty;
+    if (s <= -aIn) { x = k * aIn; ty = 0; }
+    else if (s < bIn) {
+      const th = ((s + aIn) / LcIn) * HALF_PI;
+      x = k * aIn * Math.cos(th);
+      ty = aIn * (1 - Math.sin(th)) - innerTop;
+    } else if (s <= sN) { x = -k * (s - bIn); ty = 0; }
+    else if (s < sN + LcOut) {
+      const th = ((s - sN) / LcOut) * HALF_PI;
+      x = -(N - 1) * W - k * aOut * Math.sin(th);
+      ty = -aOut * (1 - Math.cos(th)) - innerTop;
+    } else { x = -(N - 1) * W - k * aOut; ty = 0; }
+    set(track, 'transform', `translate3d(${x.toFixed(2)}px, ${ty.toFixed(2)}px, 0)`);
+
+    // Where a corner's sideways drift would push a room's text past the
+    // screen edge (phones: the text fills the width), the text holds back
+    // against its room; the room itself still takes the full curve.
+    const lastLeft = (N - 1) * W + x;
+    const in0 = x > G.roomR ? G.roomR - x : 0;
+    const inN = -lastLeft > G.roomL ? -lastLeft - G.roomL : 0;
+    if (N > 1) { shiftContent(0, in0); shiftContent(N - 1, inN); }
+    else shiftContent(0, in0 + inN);
+
+    // Backdrop. While the gallery rises over the Dive's last frame it is
+    // see-through; its backdrop (base colour + grid, one layer) fades in
+    // at exactly the same rate as the Dive's copy of it, so above and
+    // below the rising edge the picture is identical at every moment. The
+    // grid dims out as Selected Work rises (same base colour).
+    const holdA = smoothstep(-0.7 * H, -0.15 * H, s);
+    const dim = smoothstep(sN + 0.3 * LcOut, run + 0.35 * H, s);
+    set(bg, 'opacity', holdA.toFixed(3));
+    set(handoff, 'opacity', holdA.toFixed(3));
+    set(bgArt, 'opacity', (0.7 * (1 - dim)).toFixed(3));
+
+    // Dots and cue come in once the corner has turned; the cue goes as
+    // the last room arrives (nothing further to the right).
+    const hudOn = Math.min(smoothstep(-0.25 * aIn, bIn, s), 1 - smoothstep(sN, sN + 0.6 * LcOut, s));
+    set(progress, 'opacity', hudOn.toFixed(3));
+    set(progress, 'pointerEvents', hudOn > 0.6 ? 'auto' : 'none');
+    const cueOn = hudOn * (1 - smoothstep(sN - 0.6 * G.D, sN - 0.2 * G.D, s));
+    set(cue, 'opacity', cueOn.toFixed(3));
+
+    // Per-room parallax: layers drift against the pan while a room crosses.
+    rooms.forEach((room, i) => {
+      const L = i * W + x;
+      if (L <= -W || L >= W) return;
+      layers[i].forEach(({ el, f }) => set(el, 'transform', `translate3d(${(-f * 0.5 * L).toFixed(2)}px, 0, 0)`));
+      if (!revealed.has(i)) {
+        const onScreenY = innerTop + ty;
+        if (L < 0.72 * W && onScreenY < 0.8 * H && onScreenY > -0.8 * H) {
+          revealed.add(i);
+          room.classList.add('is-revealed');
+        }
+      }
+    });
+
+    const idx = clamp(Math.round(-x / W), 0, N - 1);
+    if (idx !== active) {
+      active = idx;
+      dots.forEach((d, j) => {
+        d.classList.toggle('is-active', j === idx);
+        if (j === idx) d.setAttribute('aria-current', 'true');
+        else d.removeAttribute('aria-current');
+      });
+      scene.classList.toggle('is-last-room', idx === N - 1);
+    }
+  }
+
+  const scrollPos = () => (lenis ? lenis.animatedScroll : window.scrollY);
+  // Render straight from the scroll source: Lenis emits after it has set
+  // the scroll (wheel glides and native scrolls alike), so the picture is
+  // never a frame behind or one event stale.
+  if (lenis) lenis.on('scroll', () => render(lenis.animatedScroll));
+  else window.addEventListener('scroll', () => render(window.scrollY), { passive: true });
+
+  measure();
+
+  // A refresh (resize, rotation, fonts) re-lays the page out, so the same
+  // scroll offset would land somewhere else: remember where in the
+  // gallery the page was (or the station it was gliding to) and put it
+  // back there. A link's glide still under way is left to run (a jump
+  // would cut it short); if it is heading for a station, it is re-aimed at
+  // that station's new place.
+  let keep = null;
+  let aim = -1;
+  const jumpTo = (y) => {
+    if (lenis) lenis.scrollTo(y, { immediate: true, force: true });
+    else window.scrollTo({ top: y, behavior: 'instant' });
+  };
+  ScrollTrigger.addEventListener('refreshInit', () => {
+    C.refreshing = true;
+    keep = null;
+    aim = -1;
+    const to = steer && steer.scripted ? steer.scripted() : null;
+    if (to != null) {
+      if (G.W) aim = stations().findIndex((v) => Math.abs(v - to) < 1.5);
+    } else if (G.W) {
+      const S = stations();
+      const p = (steer && steer.target()) ?? scrollPos();
+      if (p >= S[0] - 1 && p <= S[N + 1] + 1) {
+        let i = 0;
+        while (i < N && p > S[i + 1]) i++;
+        let f = clamp((p - S[i]) / (S[i + 1] - S[i]), 0, 1);
+        if (f < 0.03) f = 0;      // on (or a hair off) a station: back onto it exactly
+        else if (f > 0.97) f = 1;
+        keep = { i, f };
+      }
+    }
+    if (steer) steer.cancel();
+    measure();
+  });
+  const st = ScrollTrigger.create({
+    trigger: scene,
+    start: 'top top',
+    end: 'bottom bottom',
+    onRefresh: (self) => { G.top = self.start; },
+  });
+  ScrollTrigger.addEventListener('refresh', () => {
+    C.refreshing = false;
+    G.top = st.start;
+    if (keep) {
+      const S = stations();
+      const y = S[keep.i] + keep.f * (S[keep.i + 1] - S[keep.i]);
+      keep = null;
+      if (Math.abs(y - scrollPos()) > 0.5) jumpTo(y);
+    }
+    if (aim >= 0 && lenis && lenis.animate.isRunning) lenis.animate.to = stations()[aim];
+    aim = -1;
+    lastZone = NaN;
+    render(scrollPos());
+    if (steer && steer.layout) steer.layout();
+  });
+  G.top = st.start;
+  render(scrollPos());
+
+  steer = lenis ? wheelSteer(lenis, C) : touchSteer(C);
+
+  // Keyboard: arrows, Page Up / Down and Space step one station while the
+  // page is in the gallery; past the end stations the keys scroll the page.
+  window.addEventListener('keydown', (e) => {
+    if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;
+    const t = e.target;
+    if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+    if (e.key === ' ' && t && t.closest && t.closest('button, a, [role="button"]')) return;
+    let dir = 0;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowRight' || e.key === 'PageDown' || (e.key === ' ' && !e.shiftKey)) dir = 1;
+    else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft' || e.key === 'PageUp' || (e.key === ' ' && e.shiftKey)) dir = -1;
+    if (!dir || (e.shiftKey && e.key !== ' ')) return;
+    if (steer.step(dir)) e.preventDefault();
+  });
+
+  // A link to the gallery lands on its first room, in one glide (the
+  // generic anchor scroll would stop 20 px short of it, in the corner).
+  if (scene.id) {
+    const href = `#${scene.id}`;
+    document.addEventListener('click', (e) => {
+      const a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
+      if (!a || a.getAttribute('href') !== href) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      steer.cancel();
+      // (from where the page really is: Lenis may not have seen a jump)
+      if (steer.sync) steer.sync();
+      const y = restOf(0);
+      if (lenis) lenis.scrollTo(y, { duration: 1.6, easing: (t) => 1 - Math.pow(1 - t, 3), force: true });
+      else window.scrollTo({ top: y, behavior: 'smooth' });
+    });
+  }
+
+  // Tabbing into a room that isn't on screen brings it in.
+  scene.addEventListener('focusin', (e) => {
+    const j = rooms.findIndex((r) => r.contains(e.target));
+    inner.scrollLeft = 0;
+    if (j >= 0 && j !== active) goTo(j + 1);
+  });
+
+  if (import.meta.env.DEV) {
+    window.__galleryRests = () => rooms.map((_, i) => restOf(i));
+    window.__galleryStations = stations;
+    window.__galleryGeom = () => ({ ...G });
+  }
+}
+
+/* ── desktop: Lenis wheel ──────────────────────────────────────────
+   Every wheel event is decided as it arrives (Lenis' virtualScroll hook):
+   in free scrolling Lenis moves the page as usual; inside the gallery the
+   event starts — or is absorbed by — a glide to the next station. A glide
+   starts at the speed the page already has (read from Lenis' own running
+   ease), so taking over from Lenis, handing back to it, and changing a
+   glide's destination are all seamless. A wheel kept turning walks on
+   from room to room — straight on from the corner too, and a slow one in
+   through the corner at its own pace — at about the speed it is turned; a
+   deliberate tick once the page rests, or while it lands, always moves. */
+function wheelSteer(lenis, C) {
+  const { N } = C;
+  const GAP_NOTCH = 420;      // ms between wheel notches that starts a new gesture (a turning wheel is uneven)
+  const GAP_PAD = 260;        // … between small (trackpad) deltas
+  const QUIET = 170;          // ms without input before a stray rest is settled
+  const QUIET_NATIVE = 220;   // the same after native scrolling (scrollbar, find, focus)
+  const LANDING = 150;        // ms before a glide lands from which a deliberate tick moves on
+  const TICK_GAP = 200;       // ms since the last notch that makes a tick deliberate (not a spin)
+  const SPIN_GAP = 230;       // … after a spin that has carried the page along (see spinGap)
+  const dur = lenis.options.duration || 1;
+  const ease = lenis.options.easing;
+  const slope0 = typeof ease === 'function' ? Math.max(1, (ease(0.002) - ease(0)) / 0.002) : 6.9;
+  // Lenis' wheel ease starts at (target − scroll) × slope0 / duration px/s.
+  const CARRY = dur / slope0;
+  const now = () => performance.now();
+
+  let g = null;        // the current gesture (a burst of wheel events)
+  let glide = null;    // our running glide
+  let timer = 0;
+  let held = false;
+  let lastInput = -1e9;
+  let lastDir = 1;
+  let lastDirAt = -1e9;
+  let gid = 0;
+  const hist = [];
+
+  // The page's speed now (px/s): from Lenis' running ease (exact for its
+  // own wheel eases and for our glides), else from the last frames.
+  function velocity() {
+    const a = lenis.animate;
+    if (a && a.isRunning && a.duration && typeof a.easing === 'function') {
+      const u = clamp(a.currentTime / a.duration, 0, 1);
+      const u0 = Math.max(0, u - 0.003);
+      const u1 = Math.min(1, u + 0.003);
+      if (u1 > u0) return ((a.to - a.from) * (a.easing(u1) - a.easing(u0))) / (u1 - u0) / a.duration;
+    }
+    const t = now();
+    if (hist.length < 2 || t - hist[hist.length - 1][0] > 60) return 0;
+    const [t1, p1] = hist[Math.max(0, hist.length - 4)];
+    const [t2, p2] = hist[hist.length - 1];
+    return t2 > t1 ? ((p2 - p1) / (t2 - t1)) * 1000 : 0;
+  }
+
+  const log = import.meta.env.DEV ? (window.__steerLog = []) : null;
+  const note = (...a) => { if (log) log.push([Math.round(now()), ...a]); };
+
+  // cap: the most speed (px/s) the glide may build up on the way (0: none).
+  // cruise (a wheel kept turning, 'walk'): the speed to pan at — the page
+  // eases to it from the speed it has, holds it, and only slows onto the
+  // station at the very end (walkCurve); a walk too near its station for
+  // that, and a walk's landing ('land'), slow down from the speed the page
+  // has, without speeding up first.
+  function plan(idx, kind, seed = 0, cap = 0, cruise = 0) {
+    const to = C.stations()[idx];
+    const P = lenis.animatedScroll;
+    const X = to - P;
+    const dist = Math.abs(X);
+    if (dist < 0.5) { glide = null; return; }
+    const dir = Math.sign(X);
+    let v = velocity() * dir;
+    if (seed > v) v = seed; // a wheel notch's own kick, as Lenis would give it
+    const walk = cruise > 0 ? walkCurve(dist, v, cruise) : null;
+    let T;
+    let m0 = 0;
+    let easing;
+    if (walk) {
+      T = walk.T;
+      easing = walk.ease;
+    } else {
+      T = C.slideT(dist);
+      // Landing a page that comes in from outside: one long, smooth
+      // deceleration from the speed it has (no speeding up, no stop short).
+      if (kind === 'capture' && v > 0) T = clamp((MAX_M0 * dist) / v, T, Math.max(T, 0.85));
+      if ((kind === 'land' || cruise > 0) && v > 0) T = clamp((MAX_M0 * dist) / v, 0.18, Math.max(1.3, T));
+      m0 = (v * T) / dist;
+      if (m0 > MAX_M0) { T = Math.max(0.18, (MAX_M0 * dist) / v); m0 = Math.min(MAX_M0, (v * T) / dist); }
+      m0 = Math.max(MIN_M0, m0);
+      // capped: take longer rather than speed up past it
+      for (let k = 0; cap > 0 && k < 4; k++) {
+        const peak = (peakOf(m0) * dist) / T;
+        if (peak <= cap * 1.02 || T >= 2.4) break;
+        T = Math.min(2.4, (T * peak) / cap);
+        m0 = clamp((v * T) / dist, MIN_M0, MAX_M0);
+      }
+      const k0 = m0;
+      easing = (u) => settleEase(u, k0);
+    }
+    const t0 = now();
+    // g: the gesture that called it — the rest of that gesture belongs to
+    // this glide even after it has landed (one gesture, one station).
+    // tStop: when it starts slowing down onto its station.
+    const me = { idx, to, dir, kind, soft: C.isSoft(idx), t0, T, X, P0: P, v0: Math.max(0, v), tEnd: t0 + T * 1000, tStop: walk ? t0 + walk.tStop * 1000 : t0, absorbed: 0, g: g ? g.id : 0, done: false };
+    note('plan', kind, idx, Math.round(P), Math.round(v), +T.toFixed(3), walk ? `c${Math.round(cruise)}` : +m0.toFixed(2));
+    glide = me;
+    lenis.targetScroll = P; // never equal to `to`, so Lenis always runs the ease
+    lenis.scrollTo(to, {
+      duration: T,
+      easing,
+      force: true,
+      onComplete: () => { me.done = true; },
+    });
+    me.anim = lenis.animate.onUpdate; // to tell whether Lenis still runs this glide
+  }
+  // our glide, still under way (not landed, and not cut off by someone
+  // else's scroll: a jump, a link)
+  const running = () => !!glide && !glide.done && lenis.animate.isRunning && lenis.animate.onUpdate === glide.anim;
+  // Lenis gliding by script for someone else (a link): its programmatic
+  // ease keeps targetScroll on the current value; a wheel ease aims it at
+  // the ease's end.
+  const scripted = () => lenis.animate.isRunning && !running() && Math.abs(lenis.targetScroll - lenis.animate.to) > 0.5;
+
+  // A native jump (a key, a script) that lands just as a Lenis glide ends
+  // is taken by Lenis for its own last frame and skipped: it would go on
+  // from where it thinks the page is (and a link to where it thinks it
+  // already is would do nothing). Catch up with the page first.
+  function sync() {
+    if (lenis.animate.isRunning || Math.abs(lenis.actualScroll - lenis.animatedScroll) <= 1) return false;
+    note('sync', Math.round(lenis.animatedScroll), Math.round(lenis.actualScroll));
+    lenis.animatedScroll = lenis.targetScroll = lenis.actualScroll;
+    return true;
+  }
+
+  // Back to plain Lenis scrolling, at the speed the page has now: Lenis'
+  // next ease (this very event) starts from this target.
+  function release() {
+    const v = velocity();
+    note('release', Math.round(lenis.animatedScroll), Math.round(v));
+    glide = null;
+    lenis.targetScroll = lenis.animatedScroll + v * CARRY;
+  }
+
+  function rate(t, win = 450) {
+    let s = 0;
+    for (const [ti, a] of g.ev) if (ti > t - win) s += a;
+    return s / (win / 1000);
+  }
+  // The wheel's pace (px/s): its deltas over the last 0.7 s over the time
+  // they took — steady for a steady wheel, whatever the phase of its notches.
+  function pace(t) {
+    const ev = g.ev.filter((e) => e[0] > t - 700);
+    if (ev.length < 3) return rate(t);
+    let s = 0;
+    for (let j = 1; j < ev.length; j++) s += ev[j][1];
+    return (s / Math.max(16, ev[ev.length - 1][0] - ev[0][0])) * 1000;
+  }
+  // A wheel still turning steadily (not a trackpad's decaying tail).
+  const sustained = (t) => !!g && g.n >= 3 && t - g.last < 200 && rate(t) >= Math.max(250, 0.4 * g.peakRate);
+  // A trackpad swipe begun while the last one's momentum tail still runs:
+  // after the tail has decayed, the deltas climb well back up (two in a row).
+  function swipeAgain(ad) {
+    if (!g || g.ev.length < 8) return false;
+    // the tail since the peak (never the swipe's own ramp-up)
+    let k = 0;
+    g.ev.forEach((e, j) => { if (e[1] >= g.ev[k][1]) k = j; });
+    const tail = g.ev.slice(k + 1, -1);
+    if (tail.length < 4) return false;
+    const prev = g.ev[g.ev.length - 1][1];
+    const floor = Math.min(...tail.map((e) => e[1]));
+    const rise = 2.5 * floor + 3;
+    return floor <= 0.45 * g.peakD && ad >= rise && prev >= rise;
+  }
+  const kick = (ad) => ad / CARRY;
+
+  // A glide the wheel keeps pushing turns into a walk: a capture once it is
+  // well on its way to the first room, a push (a notch, a key) around its
+  // fastest point.
+  function walkDue(t) {
+    if (!sustained(t)) return false;
+    if (glide.kind === 'capture') return glide.absorbed >= 0.25 * C.G.D && t >= glide.t0 + 0.5 * glide.T * 1000;
+    // (a tick that came after a spin, and the wheel turning on in its
+    // rhythm right after: it was the spin going on — walk on at its pace)
+    if (glide.spun) return true;
+    return glide.absorbed >= 0.3 * C.G.D && t >= glide.t0 + 0.4 * glide.T * 1000;
+  }
+  // A slow, steady spin (a notch every 140 ms or more): coming in from
+  // outside it walks — through the corner at its own pace, on into the rooms
+  // or onto the first one, as the wheel decides — rather than slowing for
+  // the first room before it knows whether the wheel stops there.
+  const slowSpin = (t) => !!g && g.n >= 4 && g.peakD >= 40 && sustained(t) && rhythm() >= 140;
+  // Where the wheel has taken the page: the gesture's start plus every
+  // delta of it (what plain scrolling would do).
+  const wheelTarget = () => (g ? g.anchor + g.dir * g.sum : lenis.animatedScroll);
+  // how far past a station the wheel must have taken the page before a walk
+  // heads on beyond it (about half a notch)
+  const pass = () => clamp(0.04 * C.G.D, 40, 80);
+  // the walk's lag behind the wheel, in seconds of its pace
+  const LAG = 0.55;
+  // A wheel kept turning pans the rooms at about the speed it is turned
+  // (from the corner on, one continuous move), with the page a little
+  // behind where the wheel has taken it — about half a second, the room it
+  // needs to slow down smoothly, so that when the wheel stops it can land
+  // there: a little faster while further behind, slower while closer. The
+  // lag builds up gently from what it was when the walk began.
+  function walkSpeed(t) {
+    const r = pace(t);
+    const behind = (wheelTarget() - lenis.animatedScroll) * g.dir;
+    const w = g.walk || (g.walk = { t0: t, from: clamp(behind, 0, LAG * r) });
+    const want = w.from + (LAG * r - w.from) * clamp((t - w.t0) / 800, 0, 1);
+    return clamp(r + behind - want, Math.max(150, 0.45 * r), 2.5 * r + 200);
+  }
+  // Walking: heads for the first station the wheel has not yet taken the
+  // page clearly past (never one at or behind the page, nor short of
+  // minIdx), at about the wheel's pace — re-planned at every notch, so the
+  // speed follows the wheel and the page never slows for a room the wheel
+  // is turning on past. false: walked out past an end station — plain
+  // scrolling again (this event is Lenis').
+  function walkOn(t, minIdx = null) {
+    const S = C.stations();
+    const P = lenis.animatedScroll;
+    const dir = g.dir;
+    const Y = wheelTarget();
+    let i = glide && glide.dir === dir ? glide.idx : C.after(P, dir);
+    if (i != null && minIdx != null && (minIdx - i) * dir > 0) i = minIdx;
+    while (i != null && i >= 0 && i <= N + 1 && ((S[i] - P) * dir < 1.5 || (Y - S[i]) * dir >= pass())) i += dir;
+    if (i == null || i < 0 || i > N + 1) { release(); return false; }
+    // (a trackpad's stream of small deltas: re-planned a few times a second)
+    if (running() && glide.kind === 'walk' && glide.idx === i && t - glide.t0 < 60) return true;
+    // (slowing by no more than a tenth at a time — unless the page is going
+    // well over the wheel's pace: the lag is kept gently)
+    plan(i, 'walk', 0, 0, Math.max(walkSpeed(t), Math.min(0.9 * Math.abs(velocity()), 0.8 * pace(t))));
+    return true;
+  }
+  // The wheel starts walking. from 'push': a glide that has already moved
+  // the page a station on for the wheel's first notch (one tick, one room),
+  // so where the wheel has taken it counts from where the page is heading.
+  function startWalk(t, minIdx, from) {
+    const r = pace(t);
+    let behind = (wheelTarget() - lenis.animatedScroll) * g.dir;
+    if (from === 'push' && behind < LAG * r) { g.anchor += g.dir * (LAG * r - behind); behind = LAG * r; }
+    g.walk = { t0: t, from: clamp(behind, 0, LAG * r) };
+    return walkOn(t, minIdx);
+  }
+  // The wheel has stopped turning mid-walk (no input for 1.4 x its own
+  // rhythm — its typical gap between events this gesture): land on the
+  // station nearest where the wheel has taken the page, of those still far
+  // enough ahead to slow down onto smoothly. A notch that comes after all
+  // walks straight on again (walkOn), from the speed the page has.
+  const rhythm = () => {
+    if (!g || g.ev.length < 3) return 0;
+    const gaps = [];
+    for (let j = 1; j < g.ev.length; j++) gaps.push(g.ev[j][0] - g.ev[j - 1][0]);
+    gaps.sort((a, b) => a - b);
+    return gaps[gaps.length >> 1];
+  };
+  const stopAfter = () => (rhythm() ? clamp(1.4 * rhythm(), 80, 300) : 260);
+  // The longest pause between notches that is still one turning wheel, not
+  // a deliberate tick: TICK_GAP — or, for a wheel turning faster than a
+  // notch per TICK_GAP, up to 1.5 x its own rhythm (a slow spin is uneven).
+  const tickGap = () => {
+    const r = rhythm();
+    return g && g.ev.length >= 4 && r > 0 && r < TICK_GAP ? clamp(1.5 * r, TICK_GAP, 260) : TICK_GAP;
+  };
+  // … and for a glide the wheel itself drives (a capture, a walk, its
+  // landing): any pause short of the one that ends a walk — and never one
+  // under SPIN_GAP (a hiccup in a fast spin is not a deliberate tick).
+  const spinGap = () => {
+    const r = rhythm();
+    return g && g.ev.length >= 4 && r > 0 ? clamp(1.4 * r, SPIN_GAP, 360) : TICK_GAP;
+  };
+  let walkTimer = 0;
+  function walkStop() {
+    walkTimer = 0;
+    if (!running() || glide.kind !== 'walk' || held || C.refreshing) return;
+    const wait = stopAfter() - (now() - lastInput);
+    if (wait > 10) { walkTimer = setTimeout(walkStop, wait); return; }
+    const v = Math.abs(velocity());
+    const P = lenis.animatedScroll;
+    const S = C.stations();
+    const Y = wheelTarget();
+    const dir = glide.dir;
+    // The walk heads for the first station the wheel has not passed; the
+    // one before it (which it has only just passed) when that is nearer
+    // where the wheel has taken the page and still far enough ahead (about
+    // the distance plain scrolling coasts on when a wheel stops) — never a
+    // corner's outer end, though: a page that came in lands on a room.
+    // (a firmer stop rather than carrying on half a room or more past it)
+    const prev = glide.idx - dir;
+    let best = glide.idx;
+    const room = (S[best] - Y) * dir > 0.5 * C.G.D ? Math.max(30, 0.06 * v) : Math.max(50, 0.11 * v);
+    if (prev >= 0 && prev <= N + 1 && !C.isSoft(prev) && (S[prev] - P) * dir >= room && Math.abs(S[prev] - Y) < Math.abs(S[best] - Y)) best = prev;
+    // (the walk's own curve already lands there, about now: it is landing)
+    if (best === glide.idx && glide.tStop - now() < 350) { glide.kind = 'land'; note('stop', best); return; }
+    // a station still a long way off is reached as a slide would (at no
+    // more than 2.5 x the walk's speed), not crept onto
+    plan(best, 'land', 0, Math.max(300, v * 2.5, 0.9 * g.peakRate));
+  }
+
+  function absorb(event) {
+    if (event.cancelable) event.preventDefault();
+    return false;
+  }
+
+  function onWheel({ deltaY: d, event }) {
+    if (!event || event.type !== 'wheel' || event.ctrlKey || !d || lenis.isStopped || C.refreshing) return true;
+    sync();
+    const t = now();
+    const dir = Math.sign(d);
+    const ad = Math.abs(d);
+    const P = lenis.animatedScroll;
+    const gap = ad >= 40 ? GAP_NOTCH : GAP_PAD;
+    // time since the wheel's last event (before this one joins its gesture)
+    const since = g ? t - g.last : Infinity;
+    // A wheel notch (as big as any in its gesture: not a trackpad's tail)
+    // once the page has come to rest on a station — or is landing on it,
+    // after a deliberate pause — is a new push: every such tick moves.
+    const notch = ad >= 40 && (!g || ad >= 0.6 * g.peakD);
+    // in rhythm with a wheel that is still turning (a slow wheel's notches
+    // come a little further apart, and unevenly): not a deliberate tick
+    const driven = !!glide && (glide.kind === 'capture' || glide.kind === 'walk' || glide.kind === 'land');
+    const spin = !!g && g.n >= 3 && t - g.last <= (driven ? spinGap() : tickGap()) && rate(t) + ad / 0.45 >= Math.max(250, 0.4 * g.peakRate);
+    // landing: at rest, a walk's landing, the end of a glide, or the second
+    // half of a capture (one long deceleration onto the first room)
+    const landing = !!glide && (glide.done || glide.kind === 'land' || t >= glide.tEnd - LANDING || (glide.kind === 'capture' && t >= glide.t0 + 0.5 * glide.T * 1000));
+    const landed = landing && !spin && (glide.done || (!!g && t - g.last > TICK_GAP));
+    // (input that keeps a walk going is just more of the same gesture)
+    const walking = !!glide && glide.kind === 'walk' && running();
+    const fresh = !g || t - g.last > gap || dir !== g.dir || (!walking && swipeAgain(ad)) || (notch && landed);
+    // the pace of the spin a fresh push comes after (see below)
+    const spun = fresh && driven && g && g.ev.length >= 3 && dir === g.dir ? pace(t) : 0;
+    if (fresh) {
+      // (after a spin the new push keeps the spin's rhythm and where it has
+      // taken the page: if the wheel turns on, it is the same spin)
+      const was = g;
+      g = { id: ++gid, dir, n: 0, last: t, ev: [], peakD: 0, peakRate: 0, anchor: P, sum: 0 };
+      if (spun) Object.assign(g, { n: was.n, ev: was.ev.slice(), peakD: was.peakD, peakRate: was.peakRate, anchor: was.anchor + was.dir * was.sum });
+      note('gesture', dir, ad, Math.round(P));
+    }
+    g.n += 1;
+    g.sum += ad;
+    g.last = t;
+    g.ev.push([t, ad]);
+    if (g.ev.length > 16) g.ev.shift();
+    g.peakD = Math.max(g.peakD, ad);
+    g.peakRate = Math.max(g.peakRate, rate(t));
+    lastInput = t;
+    lastDir = dir;
+    lastDirAt = t;
+    arm(QUIET);
+
+    // A landed glide still owns the rest of its gesture; a new gesture
+    // starts afresh from wherever the page is (as after a glide that
+    // someone else's scroll cut off).
+    if (glide && !glide.done && !running()) glide = null;
+    if (glide && glide.done && (fresh || glide.g !== g.id)) glide = null;
+    if (glide) {
+      if (dir !== glide.dir) {
+        // turned back mid-glide: head for the station behind
+        const i = C.after(P, dir);
+        if (i == null) { release(); return true; }
+        plan(i, 'slide', kick(ad));
+        if (glide) glide.absorbed = ad;
+        return absorb(event);
+      }
+      glide.absorbed += ad;
+      // leaving: a push that carries on past an end station is plain
+      // scrolling (a walk leaves once the wheel has taken it past one)
+      if (glide.soft && glide.kind !== 'walk' && glide.absorbed >= Math.max(120, 0.6 * Math.abs(glide.X))) { release(); return true; }
+      const prog = (t - glide.t0) / (glide.T * 1000);
+      // A deliberate tick while a slide is under way — a notch on its own,
+      // TICK_GAP or more after the last (a wheel kept turning walks
+      // instead) — queues one more room, up to two past the one the page is
+      // passing: three clicks, three rooms; no deliberate tick is lost.
+      if (notch && !spin && since >= TICK_GAP && !driven && running() && !(fresh && (landed || prog >= 0.5))) {
+        const i = glide.idx + dir;
+        const passing = C.after(P, dir);
+        if (passing != null && (i - passing) * dir <= 2) {
+          if (i < 0 || i > N + 1) { release(); return true; }
+          note('queue', i);
+          plan(i, 'slide', 0, 2 * C.G.D);
+          if (glide) glide.absorbed = ad;
+        }
+        return absorb(event);
+      }
+      if (fresh) {
+        // a new push once a glide is well under way, or as it lands: one
+        // more room; one right on top of the first is the same move
+        if (landed || prog >= 0.5) {
+          const i = glide.idx + dir;
+          if (i < 0 || i > N + 1) { release(); return true; }
+          // (no faster than a push from rest moves a room; after a spin, at
+          // about the spin's pace — and walking on with it if it goes on)
+          plan(i, 'slide', 0, spun ? clamp(3 * spun, 1500, 2 * C.G.D) : 2 * C.G.D);
+          if (glide && spun) glide.spun = true;
+        } else glide.g = g.id;
+      } else if (glide.kind === 'walk' || (glide.kind === 'land' && sustained(t))) {
+        // still turning (or turning again just as it began to land): walk on
+        if (!walkOn(t)) return true;
+      } else if (glide.done ? sustained(t) : walkDue(t)) {
+        // a glide the wheel keeps pushing — or, landed, the wheel still
+        // turning in its rhythm: walk on past its station, at its pace
+        // (never a dead notch, never a full-speed slide)
+        if (!startWalk(t, glide.spun ? glide.idx : glide.idx + dir, glide.kind === 'capture' || glide.spun ? 'capture' : 'push')) return true;
+      }
+      if (glide && glide.kind === 'walk') { clearTimeout(walkTimer); walkTimer = setTimeout(walkStop, stopAfter()); }
+      return absorb(event);
+    }
+
+    const S = C.stations();
+    const I = clamp(lenis.targetScroll + d, 0, lenis.limit);
+    if (C.inside(P)) {
+      const i = C.after(P, dir);
+      if (i == null) return true;                              // past an end station: plain scrolling
+      if (C.isSoft(i) && (I - S[i]) * dir >= 0) return true;  // already pushing past the corner
+      plan(i, 'slide', kick(ad));
+      if (glide) glide.absorbed = ad;
+      return absorb(event);
+    }
+    // Coming in from outside: once Lenis would carry the page into the
+    // corner, land it on the first room it meets, from the speed it has —
+    // or, for a slow spin, walk in at its pace.
+    if ((dir > 0 && P < S[0] && I >= S[0]) || (dir < 0 && P > S[N + 1] && I <= S[N + 1])) {
+      if (slowSpin(t)) {
+        if (!startWalk(t, dir > 0 ? 1 : N, 'capture')) return true;
+        clearTimeout(walkTimer);
+        walkTimer = setTimeout(walkStop, stopAfter());
+        return absorb(event);
+      }
+      plan(dir > 0 ? 1 : N, 'capture');
+      return absorb(event);
+    }
+    return true;
+  }
+  lenis.options.virtualScroll = onWheel;
+
+  // Native scrolling (scrollbar, keys outside, find-in-page, focus): once it
+  // stops inside the gallery, glide on to the station ahead.
+  lenis.on('scroll', () => {
+    const t = now();
+    const p = lenis.animatedScroll;
+    if (hist.length && p !== hist[hist.length - 1][1] && lenis.isScrolling === 'native') { lastDir = Math.sign(p - hist[hist.length - 1][1]); lastDirAt = t; }
+    hist.push([t, p]);
+    if (hist.length > 8) hist.shift();
+    if (lenis.isScrolling === 'native' && !running()) { glide = null; lastInput = t; arm(QUIET_NATIVE); }
+  });
+  // (Lenis' own scroll listener runs first: this only acts on a jump it skipped)
+  window.addEventListener('scroll', () => {
+    if (!sync()) return;
+    glide = null;
+    lenis.emit();
+    lastInput = now();
+    arm(QUIET_NATIVE);
+  }, { passive: true });
+
+  function arm(ms) { clearTimeout(timer); timer = setTimeout(onQuiet, ms); }
+  function onQuiet() {
+    timer = 0;
+    if (running() || held || lenis.isStopped || C.refreshing) return;
+    const since = now() - lastInput;
+    if (since < QUIET - 5) { arm(QUIET - since); return; }
+    const P = lenis.animatedScroll;
+    // Lenis still easing: its own wheel ease (heading for its target), or
+    // a scroll by script — a link's glide — which is never interrupted.
+    const a = lenis.animate;
+    const heading = a.isRunning ? a.to : P;
+    if (!C.inside(heading)) return;                 // on its way out, or out
+    if (C.atStation(heading)) return;               // already resting / landing on one
+    if (scripted()) { arm(QUIET); return; }         // left between stations: settle once it is done
+    // the way the page was last moving — if that was just now; else the
+    // nearest station (a timer that fired late must not use an old direction)
+    const dir = Math.sign(heading - P) || (now() - lastDirAt < 1200 ? lastDir : 0);
+    const i = dir ? C.atOrAfter(heading, dir) : C.nearest(heading);
+    if (i != null) plan(i, 'settle');
+  }
+
+  // Grabbing the scrollbar stops a glide; letting go settles.
+  window.addEventListener('pointerdown', (e) => {
+    held = true;
+    if (running() && e.target === document.documentElement) cancel();
+  }, { capture: true, passive: true });
+  window.addEventListener('pointerup', () => { held = false; arm(QUIET_NATIVE); }, { capture: true, passive: true });
+
+  function cancel() {
+    const was = running();
+    glide = null;
+    if (was) lenis.scrollTo(lenis.animatedScroll, { immediate: true, force: true });
+  }
+
+  return {
+    goTo: (i) => { sync(); plan(i, 'key'); },
+    step(dir) {
+      sync();
+      const base = running() ? glide.to : lenis.animatedScroll;
+      if (!C.inside(base)) return false;
+      const i = C.after(base, dir);
+      if (i == null) return false;
+      plan(i, 'key');
+      return true;
+    },
+    cancel,
+    target: () => (running() ? glide.to : null),
+    scripted: () => (scripted() ? lenis.animate.to : null),
+    sync,
+  };
+}
+
+/* ── touch: native scrolling ───────────────────────────────────────
+   The finger drags the page 1:1 and the browser's own momentum carries
+   it on; CSS scroll snapping decides where that momentum comes to rest.
+   Every room is a snap point with scroll-snap-stop: always, so a fling,
+   however hard, decelerates onto the next room in its direction (the
+   browser's own snap curve: no flying past and being dragged back, no
+   stop at speed); a room the finger itself dragged past lands on the next,
+   and so does one a fast flick is about to pass (the browser's snap curve
+   starts at about 5x its distance per second: onto a room that near, the
+   flick would all but stop in one frame).
+
+   Snapping is switched on only while a touch gesture is in, or heading
+   into, the gallery, and only ever while the page is moving (being dragged
+   or flung) or resting exactly on a room — switched on with the page at
+   rest anywhere else, mandatory snapping would jump it to a room at once.
+   It is off again once the page rests, so links, keys and find are never
+   pulled at. It is also off while the finger moves too slowly to fling:
+   the browser snaps a slow release at once, hard and fast, so a finger
+   that lets go slowly is landed by our own glide instead, from its speed.
+     - From a room: snapping on. Once the finger has dragged the page a
+       little, the room it started from stops being a snap point, so even
+       a slow drag lets go onto the next room (one swipe, one room) — unless
+       the finger is heading back to it.
+     - Out of the gallery (back from the first room, on from the last):
+       snapping off; the fling carries straight on round the corner.
+     - In from outside: snapping on once the swipe will reach the corner
+       (finger position + a generous estimate of the fling's reach), so the
+       fling lands on the first room it meets.
+   A page left between stations (a corner, a resize) glides on by script,
+   as do keys and dots. All listeners are passive. */
+function touchSteer(C) {
+  const { N } = C;
+  const root = document.documentElement;
+  const V_MOVE = 60;        // px/s: the finger is still moving
+  const V_FLING = 220;      // px/s at release: below this the finger just let go
+  const COMMIT = 24;        // px the finger drags from a room before that room stops holding it
+  // The browser's snap after a fling starts at about 5x its distance per
+  // second, whatever the fling's speed: a room much nearer than v / NEAR
+  // ahead of a fast flick would all but stop it in one frame. Such a room is
+  // being passed: like one the finger dragged past, the flick lands on the
+  // next (never more than two rooms from where the swipe began).
+  const NEAR = 16;
+  const now = () => performance.now();
+  // Roughly where a fling released at v px/s comes to rest (browsers coast
+  // 0.45–0.8 s of it); generous on purpose: one that falls a little short
+  // of the corner is still caught by the first room.
+  const reach = (v) => (Math.abs(v) < V_FLING ? 0 : Math.max((v * v) / 2800, 0.45 * Math.abs(v)));
+
+  let touching = false;
+  let g = null;             // { from, origin, y0, finger: [[t, y]], scrolled }
+  let glide = null;
+  let quiet = 0;
+  let lastDir = 1;
+  let lastScrollAt = -1e9;
+  const fr = [];
+
+  // one snap point per room (placed after every layout)
+  const pts = [];
+  for (let i = 0; i < N; i++) {
+    const el = document.createElement('i');
+    el.className = 'gallery__snap';
+    el.setAttribute('aria-hidden', 'true');
+    C.scene.appendChild(el);
+    pts.push(el);
+  }
+  function layout() {
+    const top = C.scene.getBoundingClientRect().top + window.scrollY;
+    const S = C.stations();
+    pts.forEach((el, i) => { el.style.top = `${(S[i + 1] - top).toFixed(2)}px`; });
+  }
+  layout();
+
+  let snapOn = false;
+  let offKey = '';
+  const tlog = import.meta.env.DEV ? (window.__touchLog = []) : null;
+  // offs: the rooms that are not snap points for now
+  function setSnap(on, offs = []) {
+    if (!on) offs = [];
+    const key = offs.join(',');
+    if (tlog && (on !== snapOn || key !== offKey)) tlog.push([Math.round(now()), 'snap', on ? 1 : 0, key, Math.round(window.scrollY)]);
+    if (key !== offKey) {
+      pts.forEach((el, i) => el.classList.toggle('is-off', offs.includes(i)));
+      offKey = key;
+    }
+    if (on !== snapOn) {
+      root.classList.toggle('gallery-snap', on);
+      snapOn = on;
+    }
+  }
+  const roomAt = (p) => {
+    const S = C.stations();
+    for (let i = 1; i <= N; i++) if (Math.abs(S[i] - p) < 1.5) return i - 1;
+    return -1;
+  };
+  // where p is, counted in rooms (room i = i; above the gallery -1, below N)
+  const roomCoord = (p) => {
+    const S = C.stations();
+    if (p < S[1]) return -1;
+    if (p > S[N]) return N;
+    return (p - S[1]) / (C.G.D || 1);
+  };
+
+  function stop() {
+    if (!glide) return;
+    cancelAnimationFrame(glide.raf);
+    glide = null;
+  }
+
+  // Scripted glide to a station (keys, dots, a slow release, a page left
+  // between stations). soft: started as a finger lets go — for a moment the
+  // browser's own (small) fling may still nudge the page on: taken as
+  // progress, not as someone else scrolling, and held at the station.
+  const SOFT_MS = 600;
+  function glideTo(idx, v0 = 0, soft = false) {
+    stop();
+    setSnap(false);
+    if (tlog) tlog.push([Math.round(now()), 'glide', idx, Math.round(window.scrollY), Math.round(v0)]);
+    const to = C.stations()[idx];
+    const me = { idx, to, raf: 0, written: null, t0: null, e: 0 };
+    glide = me;
+    let from, X, T, m0;
+    const step = () => {
+      if (glide !== me) return;
+      const y = window.scrollY;
+      if (me.t0 == null) {
+        from = y;
+        X = to - from;
+        const dist = Math.abs(X);
+        if (dist < 1) { stop(); return; }
+        const v = v0 * Math.sign(X);
+        T = C.slideT(dist);
+        m0 = (v * T) / dist;
+        if (m0 > MAX_M0) { T = Math.max(0.16, (MAX_M0 * dist) / v); m0 = Math.min(MAX_M0, (v * T) / dist); }
+        m0 = Math.max(MIN_M0, m0);
+        me.t0 = now() - 16;
+      } else if (Math.abs(y - me.written) > 2) {
+        const d = y - me.written;
+        const nudge = soft && now() - me.t0 < SOFT_MS && Math.sign(d) === Math.sign(X) && Math.abs(d) < 60;
+        if (nudge && me.e < 0.75 && (to - y) * Math.sign(X) > 1) {
+          // the curve, re-based so that it passes through where the page is
+          from = (y - to * me.e) / (1 - me.e);
+          X = to - from;
+        } else if (!nudge) {
+          stop(); // someone else is scrolling: let them
+          return;
+        }
+      }
+      const u = clamp((now() - me.t0) / 1000 / T, 0, 1);
+      me.e = settleEase(u, m0);
+      me.written = from + X * me.e;
+      // a nudge late in the curve is kept (never pulled back), one past the
+      // station is held on it
+      const sg = Math.sign(X);
+      if (soft && (y - me.written) * sg > 0) me.written = (y - to) * sg > 0 ? to : y;
+      window.scrollTo({ top: me.written, behavior: 'instant' });
+      // landed; a soft glide stays a little longer, holding the station
+      if (u < 1 || (soft && now() - me.t0 < SOFT_MS)) me.raf = requestAnimationFrame(step);
+      else stop();
+    };
+    me.raf = requestAnimationFrame(step);
+  }
+
+  // the page's own scroll speed from its last scroll events (px/s)
+  function scrollVelocity() {
+    const t = now();
+    if (fr.length < 2 || t - fr[fr.length - 1][0] > 60) return 0;
+    const [t2, y2] = fr[fr.length - 1];
+    let j = fr.length - 2;
+    while (j > 0 && t2 - fr[j][0] < 30) j--;
+    const [t1, y1] = fr[j];
+    return t2 > t1 ? ((y2 - y1) / (t2 - t1)) * 1000 : 0;
+  }
+
+  // stop: ms without a move after which the finger counts as stopped (the
+  // browser's own fling detection assumes 40)
+  function fingerVelocity(tEnd, stop = 60) {
+    const f = g ? g.finger : [];
+    if (f.length < 2 || tEnd - f[f.length - 1][0] > stop) return 0;
+    const [t2, y2] = f[f.length - 1];
+    let j = f.length - 2;
+    while (j > 0 && t2 - f[j][0] < 50) j--;
+    const [t1, y1] = f[j];
+    return t2 > t1 ? (-(y2 - y1) / (t2 - t1)) * 1000 : 0; // page px/s (finger up = +)
+  }
+
+  // Snapping for the gesture so far: est = where the finger has put the
+  // page (main-thread scrollY lags the compositor in a fast drag; the
+  // finger does not), v = the finger's speed now (page px/s).
+  function plan(est, v) {
+    const S = C.stations();
+    const disp = est - g.from;
+    // the way the page is heading: the finger's motion while it moves, else
+    // the way it has been dragged
+    const m = Math.abs(v) >= V_MOVE ? Math.sign(v) : (Math.abs(disp) > 6 ? Math.sign(disp) : 0);
+    if (!m) return;
+    lastDir = m;
+    const o = g.origin;
+    const S1 = S[1];
+    const SN = S[N];
+    let on;
+    if (m < 0 && est < S1 + 1 && (o <= 0 || est < S1 - 1)) on = false;            // back out past the first room
+    else if (m > 0 && est > SN - 1 && (o < 0 || o === N - 1 || est > SN + 1)) on = false; // on out past the last
+    else if (est < S1) on = m > 0 && est + reach(v) >= S[0] - 40; // in from above: once it will reach the corner
+    else if (est > SN) on = m < 0 && est - reach(v) <= S[N + 1] + 40;
+    else on = true;
+    // one swipe, one room: once dragged a little away from the room it
+    // started on (and not heading back), that room no longer holds it
+    const offs = on && o >= 0 && Math.abs(disp) >= COMMIT && Math.sign(disp) === m ? [o] : [];
+    // A fast flick about to pass the next room lands on the one after.
+    // Touch moves reach this thread coalesced and late, and the browser
+    // scrolls a little ahead of the finger: where the page is now is taken
+    // from its own scroll too, carried on by the time since it was seen.
+    // Once passed, a room stays passed for the rest of the gesture (unless
+    // it turns back): a snap point coming back mid-fling would pull it back.
+    if (g.nearDir !== m) { g.near = []; g.nearDir = m; }
+    const at = Math.max(est * m, pagePos(m) * m) * m;
+    if (on && Math.abs(v) >= V_FLING) {
+      const sv = scrollVelocity();
+      const speed = Math.max(Math.abs(v), Math.sign(sv) === m ? Math.abs(sv) : 0);
+      const ahead = [];
+      for (let i = 0; i < N; i++) {
+        const d = (S[i + 1] - at) * m;
+        if (d > 1.5 && !offs.includes(i) && !g.near.includes(i)) ahead.push([d, i]);
+      }
+      ahead.sort((a, b) => a[0] - b[0]);
+      if (ahead.length > 1 && ahead[0][0] < speed / NEAR && Math.abs(ahead[1][1] - g.base) <= 2.01) g.near.push(ahead[0][1]);
+    }
+    g.want = { on, offs, m, at };
+    // The browser snaps a slow release at once, hard and fast: snapping is
+    // on only while the finger moves fast enough to fling (the browser's own
+    // fling then lands on the room); a slower finger is landed by script.
+    setSnap(on && Math.abs(v) >= V_FLING, [...new Set([...offs, ...g.near])].sort((a, b) => a - b));
+  }
+  // where the page is by now, in direction m: its last scroll, carried on
+  function pagePos(m) {
+    const y = window.scrollY;
+    const sv = scrollVelocity();
+    if (!fr.length || Math.sign(sv) !== m) return y;
+    return y + sv * Math.min(0.05, (now() - fr[fr.length - 1][0]) / 1000 + 0.017);
+  }
+
+  // The room a slow release comes to rest on, of those the drag would snap
+  // to (the room it started from no longer counts once dragged off it): the
+  // next one ahead — or one just behind (a hair past it). null: none.
+  function landing(want) {
+    if (!want || !want.on) return null;
+    const S = C.stations();
+    let behind = null;
+    let ahead = null;
+    for (let i = 0; i < N; i++) {
+      if (want.offs.includes(i)) continue;
+      const d = (S[i + 1] - want.at) * want.m;
+      if (d >= -0.5) { if (!ahead || d < ahead[0]) ahead = [d, i]; }
+      else if (!behind || -d < behind[0]) behind = [-d, i];
+    }
+    const pick = behind && (behind[0] <= 30 || !ahead) ? behind : ahead;
+    return pick ? pick[1] + 1 : null;
+  }
+
+  function arm(ms = 120) { clearTimeout(quiet); quiet = setTimeout(onQuiet, ms); }
+  function onQuiet() {
+    if (touching || glide) return;
+    if (now() - lastScrollAt < 110) { arm(); return; }
+    const y0 = window.scrollY;
+    // still for two frames (a busy main thread can hold back scroll events)
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (touching || glide) return;
+      if (Math.abs(window.scrollY - y0) > 0.5 || now() - lastScrollAt < 110) { arm(); return; }
+      setSnap(false); // at rest: snapping off again
+      const P = window.scrollY;
+      if (!C.inside(P) || C.atStation(P)) return;
+      const i = C.atOrAfter(P, lastDir);
+      if (i != null) glideTo(i, 0);
+    }));
+  }
+
+  window.addEventListener('touchstart', (e) => {
+    touching = true;
+    stop();
+    clearTimeout(quiet);
+    const t = e.touches[0];
+    const P = window.scrollY;
+    const o = roomAt(P);
+    g = { from: P, origin: o, base: roomCoord(P), y0: t ? t.clientY : 0, finger: t ? [[e.timeStamp, t.clientY]] : [], scrolled: false };
+    // resting on a room is a valid snap position: switching on moves nothing
+    if (o >= 0) setSnap(true);
+  }, { passive: true });
+  window.addEventListener('touchmove', (e) => {
+    const t = e.touches[0];
+    if (!g || !t || e.touches.length > 1) return;
+    g.finger.push([e.timeStamp, t.clientY]);
+    while (g.finger.length > 3 && e.timeStamp - g.finger[0][0] > 120) g.finger.shift();
+    // change snapping only once the page is really being dragged (the
+    // browser's scroll gesture has begun): before that the page is at rest
+    if (!g.scrolled) {
+      if (Math.abs(window.scrollY - g.from) < 2) return;
+      g.scrolled = true;
+    }
+    plan(g.from + (g.y0 - t.clientY), fingerVelocity(e.timeStamp));
+    // the finger stops (no more moves): a release now will be slow
+    clearTimeout(g.hold);
+    g.hold = setTimeout(() => { if (touching && g && g.scrolled) setSnap(false); }, 70);
+  }, { passive: true });
+  const end = (e) => {
+    if (e.touches && e.touches.length) return;
+    touching = false;
+    if (g) {
+      if (!g.scrolled) {
+        // a tap: nothing to land (and a link it opens must not be snapped)
+        if (roomAt(window.scrollY) >= 0) setSnap(false);
+      } else {
+        const v = fingerVelocity(e.timeStamp, 40);
+        const f = g.finger[g.finger.length - 1];
+        const est = g.from + (g.y0 - f[1]);
+        clearTimeout(g.hold);
+        // a fling starts: last word on where it may land
+        if (Math.abs(v) >= V_FLING) plan(est, v);
+        else {
+          // A slow release onto a room: glide there, from the finger's speed
+          // (the browser's own snap would be quick and hard).
+          if (g.want) g.want.at = Math.max(est * g.want.m, window.scrollY * g.want.m) * g.want.m;
+          const i = landing(g.want);
+          setSnap(false);
+          if (i != null) glideTo(i, v, true);
+        }
+      }
+    }
+    g = null;
+    arm();
+  };
+  window.addEventListener('touchend', end, { passive: true });
+  window.addEventListener('touchcancel', end, { passive: true });
+  window.addEventListener('wheel', () => { stop(); setSnap(false); arm(); }, { passive: true });
+  // an in-page link scrolls by script: never snapped
+  document.addEventListener('click', (e) => {
+    if (snapOn && e.target && e.target.closest && e.target.closest('a[href^="#"]')) setSnap(false);
+  }, { capture: true, passive: true });
+  window.addEventListener('scroll', () => {
+    const t = now();
+    const y = window.scrollY;
+    if (fr.length && y !== fr[fr.length - 1][1]) lastDir = Math.sign(y - fr[fr.length - 1][1]);
+    fr.push([t, y]);
+    if (fr.length > 8) fr.shift();
+    lastScrollAt = t;
+    if (glide) return; // the glide checks its own position each frame
+    if (!touching) arm();
+  }, { passive: true });
+
+  return {
+    goTo: (i) => glideTo(i, 0),
+    step(dir) {
+      const base = glide ? glide.to : window.scrollY;
+      if (!C.inside(base)) return false;
+      const i = C.after(base, dir);
+      if (i == null) return false;
+      glideTo(i, 0);
+      return true;
+    },
+    cancel() { stop(); setSnap(false); },
+    layout,
+    target: () => (glide ? glide.to : null),
+  };
 }

@@ -254,15 +254,79 @@
    Without this class, the gallery is a vertical stack — safe
    default for reduced-motion and progressive enhancement.
    ───────────────────────────────────────────────────────────── */
+/* The section is tall (one screen + the pan distance, set by JS as
+   --gallery-run) and its stage sticks to the viewport — plain CSS
+   sticky, so nothing jumps when it engages. It starts one screen early
+   and rises over the Dive's last frame, which dive.css holds still for
+   exactly that screen. clip-path clips the fixed backdrop to the
+   section (overflow does not clip fixed descendants). */
 .gallery--horizontal {
-  height: 100vh;
+  /* See-through: the base colour lives in the backdrop (below), which JS
+     fades in while the gallery rises over the Dive's last frame */
+  background: transparent;
+  height: calc(100vh + var(--gallery-run, 400vw));
+  overflow: visible;
+  clip-path: inset(0);
+  /* a jump to the section (#story, a hash load, scrollIntoView) lands on
+     the first room's rest, --gallery-entry (set by JS) below its top */
+  scroll-margin-top: calc(-1 * var(--gallery-entry, 0px));
 }
+/* only when the Dive has made room for it (dive.js adds .dive--handoff) */
+.dive--handoff + .gallery--horizontal { margin-top: -100vh; }
+
+/* Never give the stage a transform / will-change / contain: that would
+   make it the containing block of the fixed backdrop. */
+.gallery--horizontal .gallery__inner {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow: hidden;
+  overflow: clip; /* not a scroll container: focus can never scroll it sideways */
+}
+
+/* Same box as the Dive's grid (100vw × 100vh, slice) so the two line up
+   exactly through the corner. Base colour + grid are one layer (exactly
+   like the Dive's copy, .dive__handoff), so fading it in over the Dive
+   shows the same picture as the copy at every opacity. JS drives the
+   layer's opacity (the rise) and the grid's (dims as Selected Work —
+   same base colour — rises). */
+.gallery--horizontal .gallery__bg {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: #04070d;
+  opacity: 0;
+}
+.gallery--horizontal .gallery__bg svg { opacity: 0.7; }
 
 .gallery--horizontal .gallery__track {
   flex-direction: row;
   width: max-content;
   height: 100vh;
+  will-change: transform;
 }
+
+/* Touch: one snap point per room (placed by gallery.js at the room's rest
+   position). Mandatory snapping is switched on only while a touch gesture
+   in, or heading into, the gallery lands, so the browser's own momentum
+   comes to rest exactly on a room; snap-stop: always lets a fling go no
+   further than the next room ahead of where the finger let go. Off at
+   rest. */
+html.gallery-snap { scroll-snap-type: y mandatory; }
+.gallery__snap {
+  position: absolute;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
+  visibility: hidden;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
+/* the room a swipe started from, once the swipe has left it */
+.gallery__snap.is-off { scroll-snap-align: none; }
 
 .gallery--horizontal .room {
   flex: 0 0 100vw;
@@ -271,12 +335,18 @@
   min-height: 0;
   padding: 0;
   display: block;
+  /* the text may be held back against its room in a corner (gallery.js),
+     so only the diorama is clipped to the room */
+  overflow: visible;
 }
+.gallery--horizontal .room__diorama { overflow: hidden; }
 
 .gallery--horizontal .room__content {
   position: absolute;
   inset: 0;
   height: 100%;
+  /* the small viewport, so mobile toolbars never cover the text */
+  height: 100svh;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -284,13 +354,36 @@
   margin: 0;
   max-width: min(58ch, 92vw);
   margin-left: clamp(var(--gutter), 8vw, 8vw);
-  /* Safety net: if content still overflows on very short viewports,
-     allow internal scroll with an invisible scrollbar. */
-  overflow-y: auto;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
+  /* Never a nested scroller (it would eat the first swipe on phones).
+     If the content is taller than the room, JS scales it to fit. */
+  overflow: visible;
 }
-.gallery--horizontal .room__content::-webkit-scrollbar { display: none; }
+
+/* Arrival reveal: once per room, time-based (never scrubbed, so text is
+   never left half-faded between rooms). */
+.gallery--horizontal .room__number,
+.gallery--horizontal .room__heading,
+.gallery--horizontal .room__lead,
+.gallery--horizontal .room__chips > *,
+.gallery--horizontal .room__cards > *,
+.gallery--horizontal .room__timeline > *,
+.gallery--horizontal .room__columns {
+  opacity: 0;
+  transform: translate3d(44px, 0, 0);
+  transition:
+    opacity 0.6s var(--ease-out) calc(var(--reveal-i, 0) * 55ms),
+    transform 0.9s var(--ease-out) calc(var(--reveal-i, 0) * 55ms);
+}
+.gallery--horizontal .room.is-revealed .room__number,
+.gallery--horizontal .room.is-revealed .room__heading,
+.gallery--horizontal .room.is-revealed .room__lead,
+.gallery--horizontal .room.is-revealed .room__chips > *,
+.gallery--horizontal .room.is-revealed .room__cards > *,
+.gallery--horizontal .room.is-revealed .room__timeline > *,
+.gallery--horizontal .room.is-revealed .room__columns {
+  opacity: 1;
+  transform: none;
+}
 
 /* Tightened typography inside horizontal-mode rooms so all content
    (esp. the 4-item Team timeline) fits within 100vh on typical
@@ -354,29 +447,45 @@
 }
 
 .gallery--horizontal .gallery__progress {
+  opacity: 0; /* faded in by JS once the stage has turned the corner */
   display: flex;
   position: absolute;
-  bottom: var(--space-6);
+  bottom: calc(var(--space-6) - 13px);
   left: 50%;
   transform: translateX(-50%);
-  gap: var(--space-3);
+  gap: var(--space-1);
   z-index: 10;
-  pointer-events: none;
+  pointer-events: none; /* JS enables the buttons while they show */
 }
+/* Each dot is a button (gallery.js) with a finger-sized hit area; the
+   visible bar (24px, 42px when active) is drawn by ::before. */
 .gallery__progress-dot {
-  width: 24px;
+  position: relative;
+  width: 32px;
+  height: 28px;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  transition: width var(--dur-base) var(--ease-out);
+}
+.gallery__progress-dot::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  top: 50%;
   height: 2px;
-  background: rgba(255, 255, 255, 0.18);
+  margin-top: -1px;
   border-radius: 2px;
-  transition: background var(--dur-base) var(--ease-out),
-              width var(--dur-base) var(--ease-out);
+  background: rgba(255, 255, 255, 0.18);
+  transition: background var(--dur-base) var(--ease-out);
 }
-.gallery__progress-dot.is-active {
-  background: var(--color-accent);
-  width: 42px;
-}
+.gallery__progress-dot:hover::before { background: rgba(255, 255, 255, 0.4); }
+.gallery__progress-dot.is-active { width: 50px; }
+.gallery__progress-dot.is-active::before { background: var(--color-accent); }
+.gallery__progress-dot:focus-visible { outline-offset: 0; }
 
 .gallery--horizontal .gallery__cue {
+  opacity: 0;
   display: flex;
   align-items: center;
   gap: var(--space-3);
@@ -419,9 +528,40 @@
   .gallery--horizontal .gallery__cue { display: none; }
 }
 
+/* Short phones (SE-class): tighter rooms so they fit without much
+   fit-scaling (JS scales whatever still overflows). */
+@media (max-width: 520px) and (max-height: 760px) {
+  .gallery--horizontal .room__content {
+    padding-top: calc(var(--header-h) + var(--space-1));
+    padding-bottom: calc(var(--space-7) + var(--space-1));
+  }
+  .gallery--horizontal .room__number { margin-bottom: var(--space-2); }
+  .gallery--horizontal .room__heading { font-size: clamp(1.4rem, 4vw + 0.8rem, 1.85rem); margin-bottom: var(--space-2); }
+  .gallery--horizontal .room__lead { font-size: 0.88rem; line-height: 1.5; margin-bottom: var(--space-4); }
+  .gallery--horizontal .room__card { padding: var(--space-2) var(--space-3); }
+  .gallery--horizontal .room__card strong { font-size: 0.88rem; }
+  .gallery--horizontal .room__card span { font-size: 0.8rem; line-height: 1.4; }
+  .gallery--horizontal .room__timeline { gap: var(--space-2); }
+  .gallery--horizontal .room__timeline li { font-size: 0.8rem; line-height: 1.4; }
+  .gallery--horizontal .room__column li { font-size: 0.82rem; padding: 0.25rem 0; }
+  .gallery--horizontal .gallery__progress { bottom: calc(var(--space-5) - 13px); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   /* Force vertical stack regardless of JS — match the safe default */
-  .gallery--horizontal { height: auto; }
+  .gallery--horizontal,
+  .dive--handoff + .gallery--horizontal { height: auto; margin-top: 0; clip-path: none; overflow: hidden; }
+  .gallery--horizontal .gallery__inner { position: relative; height: 100%; overflow: visible; }
+  .gallery--horizontal .gallery__bg { position: absolute; inset: 0; width: auto; height: auto; opacity: 0.7 !important; background: none; }
+  .gallery--horizontal .gallery__track { transform: none !important; }
+  .gallery--horizontal .room__content { transform: none !important; }
+  .gallery--horizontal .room__number,
+  .gallery--horizontal .room__heading,
+  .gallery--horizontal .room__lead,
+  .gallery--horizontal .room__chips > *,
+  .gallery--horizontal .room__cards > *,
+  .gallery--horizontal .room__timeline > *,
+  .gallery--horizontal .room__columns { opacity: 1; transform: none; }
   .gallery--horizontal .gallery__track { flex-direction: column; width: 100%; height: auto; }
   .gallery--horizontal .room {
     flex: 0 0 auto; width: 100%; height: auto; min-height: 100vh;

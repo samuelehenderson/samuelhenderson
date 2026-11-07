@@ -1,7 +1,6 @@
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { initMouseParallax } from '../lib/parallax.js';
-import { initHeroWindow } from './hero-window.js';
 
 /**
  * Scene 1 — Hero / The Workshop
@@ -13,10 +12,6 @@ import { initHeroWindow } from './hero-window.js';
 export function initHero({ reducedMotion }) {
   const scene = document.querySelector('[data-scene="hero"]');
   if (!scene) return;
-
-  // The window's live view (falling snow, twinkling stars) — after first paint,
-  // and as a still frame under reduced motion.
-  initHeroWindow(scene, { reducedMotion });
 
   const content = scene.querySelector('.hero__content');
   const cue     = scene.querySelector('.hero__cue');

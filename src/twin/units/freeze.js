@@ -13,6 +13,7 @@
  */
 import {
   BufferAttribute,
+  BufferGeometry,
   Color,
   Float32BufferAttribute,
   LineBasicMaterial,
@@ -129,18 +130,48 @@ function attrSig(g) {
  * empty static groups are pruned. `canon` is a Map shared by every unit on a
  * level: identical untouched materials collapse to one.
  */
-export function freeze(view, { canon = new Map() } = {}) {
+export function freeze(view, opts) {
+  return drain(freezeIter(view, opts));
+}
+
+/** Runs a step generator to the end (node checks, tests): returns its result. */
+export function drain(it) {
+  for (;;) {
+    const r = it.next();
+    if (r.done) return r.value;
+  }
+}
+
+/**
+ * A clock for a generator step: `if (slice.over()) { yield; slice.reset(); }`
+ * hands the main thread back once a slice has run for `budget` ms.
+ */
+function sliceClock(budget) {
+  let s0 = performance.now();
+  return { over: () => performance.now() - s0 > budget, reset: () => (s0 = performance.now()) };
+}
+
+/** freeze() as a generator: yields between merge buckets once `budget` ms have passed. */
+export function* freezeIter(view, { canon = new Map(), budget = Infinity } = {}) {
   const root = view.unit;
   const t0 = performance.now();
+  const slice = sliceClock(budget);
   const { moved, liveMats } = probe(view);
   const probeMs = performance.now() - t0;
   root.updateMatrixWorld(true);
   const isBody = (o) => o === root || moved.has(o);
+  // the representative of a signature is a private clone: a material some view
+  // animates (a shared level material can be live in one unit and static in
+  // another) must never stand in for another unit's static parts
   const canonOf = (m) => {
     if (liveMats.has(m)) return m;
     const sig = signature(m);
     if (!sig) return m;
-    if (!canon.has(sig)) canon.set(sig, m);
+    if (!canon.has(sig)) {
+      const c = m.clone();
+      c.userData = { ...c.userData, canon: true };
+      canon.set(sig, c);
+    }
     return canon.get(sig);
   };
   const buckets = new Map();
@@ -182,8 +213,14 @@ export function freeze(view, { canon = new Map() } = {}) {
   const rel = new Matrix4();
   let after = 0;
   for (const bk of buckets.values()) {
+    if (slice.over()) {
+      yield;
+      slice.reset();
+    }
     const only = bk.list.length === 1 ? bk.list[0] : null;
-    if (only && only.parent === bk.b && only.material === bk.mat) {
+    if (only && only.parent === bk.b) {
+      // a lone static mesh stays as it is (on its canonical material)
+      only.material = bk.mat;
       after++;
       continue;
     }
@@ -341,18 +378,31 @@ export function bakePiece(o, rel, { line = false, colorOverride = null } = {}) {
  * object matrix, where three fixes the winding).
  * Also returns `xray`: the opaque parts with a bbox diagonal ≥ xrayMin, position + normal only.
  */
-export function bake(root, { mats, xrayMin = 0.25, skip = null } = {}) {
+export function bake(root, opts) {
+  return drain(bakeIter(root, opts));
+}
+
+/** bake() as a generator: yields between pieces once `budget` ms have passed. */
+export function* bakeIter(root, { mats, xrayMin = 0.25, skip = null, budget = Infinity } = {}) {
+  const slice = sliceClock(budget);
   root.updateMatrixWorld(true);
   const inv = new Matrix4().copy(root.matrixWorld).invert();
   const rel = new Matrix4();
   const relI = new Matrix4();
   const groups = { solid: [], glass: [], line: [], xray: [] };
+  const list = [];
   root.traverseVisible((o) => {
     if (o === root || o.userData?.air || o.isPoints || o.isCSS2DObject) return;
     if (skip && skip(o)) return;
-    if (!(o.isMesh || o.isLineSegments)) return;
+    if (o.isMesh || o.isLineSegments) list.push(o);
+  });
+  for (const o of list) {
+    if (slice.over()) {
+      yield;
+      slice.reset();
+    }
     const m = Array.isArray(o.material) ? o.material[0] : o.material;
-    if (!m || m.visible === false || m.isShaderMaterial) return;
+    if (!m || m.visible === false || m.isShaderMaterial) continue;
     const kind = o.isLineSegments ? 'line' : m.transparent && m.opacity < 0.6 ? 'glass' : 'solid';
     rel.multiplyMatrices(inv, o.matrixWorld);
     eachInstance(o, (im) => {
@@ -367,7 +417,8 @@ export function bake(root, { mats, xrayMin = 0.25, skip = null } = {}) {
         if (diag >= xrayMin) groups.xray.push(g);
       }
     });
-  });
+  }
+  if (slice.over()) yield;
   const out = { solid: null, glass: null, line: null, xray: null, tris: 0, draws: 0 };
   for (const k of ['solid', 'glass', 'line']) {
     const list = groups[k];
@@ -396,4 +447,65 @@ export function bake(root, { mats, xrayMin = 0.25, skip = null } = {}) {
   for (const k of ['solid', 'glass', 'line']) for (const g of groups[k]) if (groups[k].length > 1) g.dispose();
   out.tris = Math.round(out.tris);
   return out;
+}
+
+/**
+ * Vertex clustering: snaps every vertex to a `cell`-metre grid (cell average),
+ * drops triangles that collapse and recomputes smooth normals. A silhouette-
+ * grade copy of an indexed position geometry (the B1 x-ray rim shader needs
+ * no more than that). Returns a new indexed geometry (position + normal).
+ */
+export function cluster(g, cell) {
+  const pos = g.attributes.position;
+  const n = pos.count;
+  const idx = g.index ? g.index.array : null;
+  const inv = 1 / cell;
+  const keyOf = new Map();
+  const remap = new Uint32Array(n);
+  const sum = [];
+  for (let i = 0; i < n; i++) {
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const z = pos.getZ(i);
+    const k = `${Math.round(x * inv)},${Math.round(y * inv)},${Math.round(z * inv)}`;
+    let c = keyOf.get(k);
+    if (c === undefined) {
+      c = sum.length / 4;
+      keyOf.set(k, c);
+      sum.push(0, 0, 0, 0);
+    }
+    remap[i] = c;
+    sum[c * 4] += x;
+    sum[c * 4 + 1] += y;
+    sum[c * 4 + 2] += z;
+    sum[c * 4 + 3]++;
+  }
+  const m = sum.length / 4;
+  const p = new Float32Array(m * 3);
+  for (let c = 0; c < m; c++) {
+    const w = sum[c * 4 + 3];
+    p[c * 3] = sum[c * 4] / w;
+    p[c * 3 + 1] = sum[c * 4 + 1] / w;
+    p[c * 3 + 2] = sum[c * 4 + 2] / w;
+  }
+  const tris = idx ? idx.length : n;
+  const out = [];
+  const seen = new Set();
+  for (let t = 0; t + 2 < tris; t += 3) {
+    const a = remap[idx ? idx[t] : t];
+    const b = remap[idx ? idx[t + 1] : t + 1];
+    const c = remap[idx ? idx[t + 2] : t + 2];
+    if (a === b || b === c || a === c) continue;
+    // one triangle per cell triple and winding
+    const lo = Math.min(a, b, c);
+    const k = lo === a ? `${a},${b},${c}` : lo === b ? `${b},${c},${a}` : `${c},${a},${b}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(a, b, c);
+  }
+  const r = new BufferGeometry();
+  r.setAttribute('position', new BufferAttribute(p, 3));
+  r.setIndex(out.length && m > 65535 ? new BufferAttribute(new Uint32Array(out), 1) : out);
+  r.computeVertexNormals();
+  return r;
 }

@@ -14,8 +14,8 @@
  * The damper blade inside the inlet is dropped (the casing and the branch hide
  * it). The world draws it with its per-level InstancedMesh and zone texture,
  * so every zone keeps its pick, hover, alarm and reheat glow, one draw per level.
- * Low tier keeps only parts with a bbox diagonal ≥ 0.12 m (≤ 400 tris), else a
- * box the size of the casing.
+ * Low tier keeps only parts with a bbox diagonal ≥ 0.12 m within 400 tris (the
+ * finest detail is dropped first), else a box the size of the casing.
  */
 import { Box3, BoxGeometry, BufferAttribute, Color, Group, Matrix4, Vector3 } from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
@@ -49,11 +49,18 @@ export function buildVavGeometry(Vav3DView, mats, { tier = 'high' } = {}) {
   const inlet = view.inletLocal || { x: 0, y: 0, z: 0 };
   const out = view.outletLocal || { x: 0.3, y: inlet.y, z: 0, w: 0.4 };
   const coilMats = new Set(view.parts.coils[0]?.mats || []);
-  const blades = view.parts.dampers[0]?.g || null;
+  // the round damper blade(s) inside the inlet: hidden by the opaque casing and the branch duct
+  const blades = (view.parts.dampers[0]?.blades || []).filter(Boolean);
   const under = (o, anc) => {
     for (let a = o; a; a = a.parent) if (a === anc) return true;
     return false;
   };
+  // the reheat coil's section: its fins sit inside the (now opaque) shell, so the
+  // shell itself carries the reheat glow (aPart 1) and the fins are dropped
+  let coilSec = null;
+  unit.traverse((o) => {
+    if (!coilSec && o.isMesh && coilMats.has(Array.isArray(o.material) ? o.material[0] : o.material)) coilSec = o.parent;
+  });
   // unit frame, shifted so the inlet collar centre is the origin
   const inv = new Matrix4().copy(unit.matrixWorld).invert();
   const shift = new Matrix4().makeTranslation(-inlet.x, -inlet.y, -inlet.z);
@@ -63,11 +70,12 @@ export function buildVavGeometry(Vav3DView, mats, { tier = 'high' } = {}) {
   const bb = new Box3();
   unit.traverseVisible((o) => {
     if (!o.isMesh || o.userData?.air) return;
-    if (blades && under(o, blades)) return;
+    if (blades.some((b) => under(o, b))) return;
     const m = Array.isArray(o.material) ? o.material[0] : o.material;
     if (!m || m.visible === false || m.isShaderMaterial) return;
+    if (coilMats.has(m) && o.isInstancedMesh) return; // the fins, inside the coil shell
     const see = m.transparent && m.opacity < 0.6;
-    const part = coilMats.has(m) ? 1 : 0;
+    const part = coilMats.has(m) || (see && coilSec && under(o, coilSec)) ? 1 : 0;
     rel.multiplyMatrices(shift, rel.multiplyMatrices(inv, o.matrixWorld));
     eachInstance(o, (im) => {
       const p = bakePiece(o, im ? relI.multiplyMatrices(rel, im) : rel, { colorOverride: see ? GALV : null });
@@ -75,7 +83,7 @@ export function buildVavGeometry(Vav3DView, mats, { tier = 'high' } = {}) {
       p.computeBoundingBox();
       bb.copy(p.boundingBox);
       const diag = bb.max.distanceTo(bb.min);
-      pieces.push({ g: withPart(asCol(p), part), diag, tris: trisOf(p) });
+      pieces.push({ g: withPart(asCol(p), part), diag, tris: trisOf(p), name: o.userData?.pick?.title || o.name || m.name || m.color?.getHexString?.() });
     });
   });
   // casing extents (for the low-tier fallback box and the pick box)
@@ -103,9 +111,11 @@ export function buildVavGeometry(Vav3DView, mats, { tier = 'high' } = {}) {
   });
   let keep = pieces;
   if (tier === 'low') {
-    keep = pieces.filter((p) => p.diag >= LOW_DIAG);
-    const t = keep.reduce((a, p) => a + p.tris, 0) + 24;
-    if (t > LOW_TRIS) {
+    // big parts first; the finest detail (most triangles per metre) goes first when over budget
+    keep = pieces.filter((p) => p.diag >= LOW_DIAG).sort((a, b) => a.tris / a.diag - b.tris / b.diag);
+    let t = 24; // the diffuser
+    keep = keep.filter((p) => (t + p.tris <= LOW_TRIS ? ((t += p.tris), true) : false));
+    if (!keep.some((p) => p.name === 'Casing')) {
       // too fine even filtered: one box the size of the casing
       const s = box.getSize(new Vector3());
       const c = box.getCenter(new Vector3());
@@ -134,5 +144,5 @@ export function buildVavGeometry(Vav3DView, mats, { tier = 'high' } = {}) {
   g.traverse((o) => {
     if (o.geometry && !o.geometry.userData?.shared) o.geometry.dispose();
   });
-  return { geometry, box: full, tris: trisOf(geometry), pieces: keep.length };
+  return { geometry, box: full, tris: trisOf(geometry), pieces: keep.length, list: pieces.map((p) => [p.name, +p.diag.toFixed(2), p.tris]) };
 }

@@ -26,7 +26,16 @@ export default defineConfig({
     target: 'es2020',
     cssCodeSplit: true,
     sourcemap: false,
-    // three.js lives in the lazily loaded twin chunk (~180 KB gz); it never blocks first paint
+    // three.js lives in the lazily loaded twin chunks (~150 KB gz); it never blocks first paint
     chunkSizeWarningLimit: 800,
+    rollupOptions: {
+      output: {
+        // three (core + the examples the twin uses) is shared by the twin app and the units
+        // chunk: one named chunk for it, and the units chunk named for what it is
+        manualChunks: (id) => (id.replace(/\\/g, '/').includes('/node_modules/three/') ? 'three' : undefined),
+        chunkFileNames: (c) =>
+          (c.facadeModuleId || '').replace(/\\/g, '/').endsWith('/src/twin/units/index.js') ? 'assets/units-[hash].js' : 'assets/[name]-[hash].js',
+      },
+    },
   },
 });

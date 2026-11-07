@@ -63,6 +63,23 @@ function cwpConfig() {
 }
 const HHW_CONFIG = hhwConfig({ exchangers: 2, pumps: 2, valves: 'split', bypass: true, pumpProof: true, program: false }, { tag: 'HHW' });
 
+/**
+ * A small air handler built off-scene before AHU-1 (units/index.js warmUp): it takes the
+ * one-time cost of ClarityView's builders and Siemens device geometry out of AHU-1's task.
+ */
+export const WARM = (() => {
+  const c = clone(DEFAULT_AHU);
+  const keep = ['OA Damper', 'Pre-Filter', 'Cooling Coil', 'Supply Fans', 'Discharge'];
+  c.supply = c.supply.filter((s) => keep.includes(s.label));
+  const fan = c.supply.find((s) => s.device === 'fan');
+  fan.count = 1;
+  fan.fans = fan.fans.slice(0, 1);
+  delete c.return;
+  c.sensors = c.sensors.filter((s) => s.tag === 'SAT');
+  c.airStations = [];
+  return { id: '__warm', config: c };
+})();
+
 /** The VAV terminal: ClarityView's 12" single-duct box with HW reheat on a DXR2. */
 export const VAV = { config: vavConfig('single-duct', { reheat: 'hw', size: '12', hand: 'R', family: 'dxr2' }), kind: 'vav' };
 
@@ -223,7 +240,9 @@ export const UNITS = [
     bindings: ahuBindings('AHU-2'), unmapped: ['RF1.FLT', 'RF2.FLT'], subs: [], aliases: [],
   },
   {
-    id: 'CT-1', cls: 'tower', kind: 'tower', title: 'CT-1', family: 'water', tower: true,
+    // lodBias: the tower's live model differs from its baked copy only by the fan inside the
+    // stack, so it goes live a little later than its size alone would say
+    id: 'CT-1', cls: 'tower', kind: 'tower', title: 'CT-1', family: 'water', tower: true, lodBias: 0.8,
     config: towerConfig(), level: 'RF', x: 13.6, y: 24, z: 0, rotY: 0,
     bindings: TOWER_BINDINGS, unmapped: ['CTF1.FLT'], subs: [], aliases: [],
   },

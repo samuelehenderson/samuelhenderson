@@ -10,19 +10,23 @@
  *     units.owner(id)               the host for a unit, alias or sub-part id
  *     units.setTier(t) / setPixelRatio(px) / afterCompile() / dispose()
  *
- * ref.state is sim.state (the sim mutates it in place). Build order: AHU-1,
- * AHU-2, CT-1, CH-1, CH-2, CWP-1, HHW-1, then the VAV terminal. Each step is a
+ * ref.state is sim.state (the sim mutates it in place). Build order: a small
+ * warm-up air handler (off-scene), AHU-1, AHU-2, CT-1, CH-1, CH-2, CWP-1,
+ * HHW-1, then the VAV terminal. Each step is a
  * performance.measure('twin:unit:<id>:<step>') (kept in production; cheap).
  */
-import { Box3, Vector3 } from 'three';
+import { Box3, Group, Vector3 } from 'three';
 import { Ahu3DView } from '../../clarityview/ahu/3d/ahu3d.js';
 import { Tower3DView, CentrifugalChiller3DView, Booster3DView, Hhw3DView, Vav3DView } from '../../clarityview/ahu/3d/equip3d.js';
 import { AirFlow } from '../../clarityview/ahu/3d/airflow3d.js';
 import { disposeDeviceCache } from '../../clarityview/ahu/3d/siemens3d.js';
-import { UNITS } from './catalog.js';
+import { UNITS, WARM, mapOf } from './catalog.js';
 import { createHost, levelMaterials, pickMaterial } from './host.js';
 import { bakeMaterials } from './freeze.js';
 import { buildVavGeometry } from './vav.js';
+
+// a generator step hands the main thread back after this many ms
+const SLICE_MS = 24;
 
 const CLASSES = { ahu: Ahu3DView, tower: Tower3DView, chiller: CentrifugalChiller3DView, booster: Booster3DView, hhw: Hhw3DView };
 
@@ -61,24 +65,61 @@ export function createUnits({ layout, levels, world, tier = 'high', reducedMotio
     return shared.get(li);
   }
 
+  /**
+   * One build step as its own task(s): a plain function runs once; a generator
+   * (freeze, bake) runs a slice per task until done, `name`, `name.2`, … Each
+   * task is a performance.measure('twin:unit:<id>:<name>'), kept in production.
+   */
   async function step(id, name, fn, yieldFn) {
-    const a = `twin:unit:${id}:${name}:a`;
-    const b = `twin:unit:${id}:${name}:b`;
-    mark(a);
-    const t0 = performance.now();
-    try {
-      fn();
-    } finally {
-      const ms = performance.now() - t0;
-      mark(b);
-      measure(`twin:unit:${id}:${name}`, a, b);
-      timings.push({ id, step: name, ms: +ms.toFixed(1) });
+    const budget = yieldFn ? SLICE_MS : Infinity;
+    let it = null;
+    let done = false;
+    for (let k = 1; !done; k++) {
+      const label = k === 1 ? name : `${name}.${k}`;
+      const a = `twin:unit:${id}:${label}:a`;
+      const b = `twin:unit:${id}:${label}:b`;
+      mark(a);
+      const t0 = performance.now();
+      try {
+        if (k === 1) {
+          const out = fn(budget);
+          if (out && typeof out.next === 'function') it = out;
+        }
+        done = !it || it.next().done;
+      } finally {
+        const ms = performance.now() - t0;
+        mark(b);
+        measure(`twin:unit:${id}:${label}`, a, b);
+        timings.push({ id, step: label, ms: +ms.toFixed(1) });
+      }
+      if (yieldFn) await yieldFn();
     }
-    if (yieldFn) await yieldFn();
+  }
+
+  /**
+   * The first model built pays for compiling ClarityView's builders and for the
+   * Siemens device geometry it caches: a small air handler (damper, filter,
+   * valved coil, fan, sensor), built off-scene in its own task, takes part of
+   * that cost out of AHU-1's embed. Its geometry is dropped; the device cache stays.
+   */
+  function warmUp(li) {
+    const view = new Ahu3DView({ title: 'warm-up', config: WARM.config, kind: 'ahu', rhAfterFans: true });
+    const g = new Group();
+    const map = mapOf(WARM);
+    view.embed(g, 'warm.', (s) => map.has(s), () => null, sharedFor(li).mats);
+    g.traverse((o) => {
+      if (o.geometry && !o.geometry.userData?.shared) o.geometry.dispose();
+    });
   }
 
   async function build(yieldFn) {
     const t0 = performance.now();
+    try {
+      const li = levels.byId.get(UNITS[0].level);
+      if (li !== undefined) await step('warm', 'embed', () => warmUp(li), yieldFn);
+    } catch (err) {
+      if (dev) console.warn('[twin units]', 'warm-up', err);
+    }
     for (const unit of UNITS) {
       if (disposed) return;
       const li = levels.byId.get(unit.level);

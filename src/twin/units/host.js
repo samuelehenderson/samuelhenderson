@@ -2,7 +2,8 @@
  * Digital Twin units — one ClarityView model in the twin.
  *
  *   createHost(unit, ctx) → host
- *     host.steps: embed → measure → freeze → bake → finish (each a separate task)
+ *     host.steps: embed → measure → freeze → bake → finish (each its own task; freeze
+ *                 and bake are generators that hand the thread back every `budget` ms)
  *     host.update(dt, now, f)   LOD choice + tick (LOD0 only); the tower plume
  *     host.pick(raycaster)      { id, d } against invisible boxes (unit, then sub-parts)
  *     host.boxOf(id)            level-local Box3 of the unit or a sub-part
@@ -35,7 +36,7 @@ import {
   Vector3,
 } from 'three';
 import { accessFor } from './catalog.js';
-import { bake, freeze, settle, eachInstance } from './freeze.js';
+import { bakeIter, cluster, freezeIter, settle, eachInstance } from './freeze.js';
 import { patchUnitMaterial, unitPatchOf } from '../shared.js';
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -43,6 +44,11 @@ const damp = (a, b, rate, dt) => a + (b - a) * (1 - Math.exp(-rate * dt));
 const PROXY_COLOR = { air: '#6d7c8c', water: '#5f7488' };
 const LOD_IN = 0.18;
 const LOD_OUT = 0.14;
+// x-ray silhouettes (B1, seen through the ground): only parts at least this big
+const XRAY_MIN = 0.5;
+const XRAY_CELL = 0.1;
+const AIR_IN = 0.3;
+const AIR_OUT = 0.25;
 
 const noFoot = (o, stop) => {
   for (let a = o; a && a !== stop; a = a.parent) if (a.userData?.noFootprint || a.userData?.air) return true;
@@ -205,16 +211,16 @@ export function createHost(unit, ctx) {
     }
   }
 
-  function doFreeze() {
-    const r = freeze(host.view, { canon: shared.canon });
+  function* doFreeze(budget) {
+    const r = yield* freezeIter(host.view, { canon: shared.canon, budget });
     host.liveMats = r.liveMats;
     host.stats.freeze = { probeMs: r.probeMs, ms: r.totalMs, before: r.meshesBefore, after: r.meshesAfter, moved: r.moved.size, liveMats: r.liveMats.size };
   }
 
-  function doBake() {
+  function* doBake(budget) {
     const view = host.view;
     settle(view);
-    const r = bake(view.unit, { mats: shared.bakeMats, xrayMin: level.kind === 'plant' ? 0.25 : 0 });
+    const r = yield* bakeIter(view.unit, { mats: shared.bakeMats, xrayMin: level.kind === 'plant' ? XRAY_MIN : 0, budget });
     const g = new Group();
     g.name = `lod1-${unit.id}`;
     g.position.copy(view.unit.position);
@@ -228,8 +234,10 @@ export function createHost(unit, ctx) {
       holder.updateMatrix();
       seat.updateMatrix();
       g.updateMatrix();
-      r.xray.applyMatrix4(new Matrix4().multiplyMatrices(holder.matrix, new Matrix4().multiplyMatrices(seat.matrix, g.matrix)));
-      host.xray = r.xray;
+      // (vertex-clustered to a 0.1 m grid: the rim shader needs only the silhouette)
+      host.xray = cluster(r.xray, XRAY_CELL);
+      r.xray.dispose();
+      host.xray.applyMatrix4(new Matrix4().multiplyMatrices(holder.matrix, new Matrix4().multiplyMatrices(seat.matrix, g.matrix)));
     }
     host.stats.bake = { draws: r.draws, tris: r.tris };
   }
@@ -247,7 +255,8 @@ export function createHost(unit, ctx) {
           patchUnitMaterial(m, { reveal: shared.reveal, levelY: shared.levelY, glow: shared.glow, level: li });
           return m;
         }
-        if (rec.level === li || host.liveMats?.has(m)) return m;
+        // patched for this level (this mount) already, or animated by the view: keep it
+        if (rec.reveal === shared.reveal || host.liveMats?.has(m)) return m;
         if (!clones.has(m)) {
           const c = m.clone();
           patchUnitMaterial(c, { reveal: shared.reveal, levelY: shared.levelY, glow: shared.glow, level: li, orig: rec.base });
@@ -261,15 +270,15 @@ export function createHost(unit, ctx) {
     holder.traverse((o) => {
       if (o.isMesh || o.isLine) patch(o);
     });
-    // shadows: ClarityView's flags, except see-through parts (no solid black boxes from clear casings)
-    view.unit.traverse((o) => {
+    // shadows: ClarityView's flags, except see-through parts (no solid black boxes from clear
+    // casings). The sun never reaches the basement plant room: nothing there casts at all.
+    const below = level.kind === 'plant';
+    holder.traverse((o) => {
       if (!o.isMesh || !o.castShadow) return;
       const m = Array.isArray(o.material) ? o.material[0] : o.material;
-      if (m?.transparent && m.opacity < 0.6) o.castShadow = false;
+      if (below || (m?.transparent && m.opacity < 0.6)) o.castShadow = false;
       else host.casters.push(o);
     });
-    for (const o of host.lod1?.children || []) if (o.castShadow) host.casters.push(o);
-    if (host.curb) host.casters.push(host.curb);
     // the embedded air stream, made now (hidden) so its program compiles with the rest
     if (ctx.AirFlow && !unit.tower && unit.cls !== 'hhw' && !view.air) {
       view.air = new ctx.AirFlow(0);
@@ -307,10 +316,10 @@ export function createHost(unit, ctx) {
     patchUnitMaterial(mat, { reveal: shared.reveal, levelY: shared.levelY, glow: shared.glow, level: li });
     const proxy = new Mesh(new BoxGeometry(size.x, size.y, size.z), mat);
     host.box.getCenter(proxy.position);
-    proxy.castShadow = true;
+    proxy.castShadow = level.kind !== 'plant';
     holder.add(proxy);
     host.proxy = proxy;
-    host.casters.push(proxy);
+    if (proxy.castShadow) host.casters.push(proxy);
     buildPicks();
   }
 
@@ -404,9 +413,17 @@ export function createHost(unit, ctx) {
   }
 
   const wc = new Vector3();
-  const sz = new Vector3();
+  let center = null; // level-local centre of the unit's box (the holder never moves)
+  let radius = 1;
   /**
    * f: { camera, tanHalf, tier, selected, hover, levelY, revealDone, reducedMotion, airOk }
+   *
+   * LOD: the selected unit is always the live model (every tier); on the low
+   * tier everything else is the baked copy; on the high tier the hovered unit is
+   * live and the rest go by screen size (live at frac ≥ 0.18, back at < 0.14).
+   * Air (and the plant families' water streams) only on the high tier, after the
+   * level has revealed, without reduced motion, and only in a close-up: the
+   * unit selected or hovered, or filling a good part of the view (frac ≥ 0.3).
    */
   function update(dt, now, f) {
     const vis = holder.parent?.visible !== false && holder.visible;
@@ -420,27 +437,35 @@ export function createHost(unit, ctx) {
       host.plume.mesh.visible = host.plume.amt > 0.002;
     }
     if (!vis || host.proxy || !host.view) return;
-    const mine = (id) => id && (id === unit.id || unit.aliases?.includes(id) || host.subs.some((s) => s.id === id));
-    let want;
-    if (mine(f.selected)) want = 0;
-    else if (f.tier !== 'high') want = 1;
-    else if (mine(f.hover)) want = 0;
-    else {
-      host.box.getCenter(wc);
-      wc.y += f.levelY;
-      const r = host.box.getSize(sz).length() / 2;
-      const d = Math.max(0.01, wc.distanceTo(f.camera.position));
-      const frac = r / (d * f.tanHalf);
-      want = host.lod === 0 ? (frac < LOD_OUT ? 1 : 0) : frac >= LOD_IN ? 0 : 1;
+    if (!center) {
+      holder.updateMatrix();
+      center = host.box.getCenter(new Vector3()).applyMatrix4(holder.matrix);
+      radius = host.box.getSize(new Vector3()).length() / 2;
     }
+    wc.copy(center);
+    wc.y += f.levelY;
+    const d = Math.max(0.01, wc.distanceTo(f.camera.position));
+    // (unit.lodBias < 1: a unit whose live model adds little at a distance goes live later)
+    const frac = (radius / (d * f.tanHalf)) * (unit.lodBias || 1);
+    host.frac = frac;
+    const sel = mine(f.selected);
+    const hov = mine(f.hover);
+    let want;
+    if (sel) want = 0;
+    else if (f.tier !== 'high') want = 1;
+    else if (hov) want = 0;
+    else want = host.lod === 0 ? (frac < LOD_OUT ? 1 : 0) : frac >= LOD_IN ? 0 : 1;
     setLod(want, now);
     if (host.lod !== 0) return;
     const view = host.view;
-    view.showAir = !!f.airOk && !unit.tower && unit.cls !== 'hhw';
+    const close = sel || hov || (host.airClose ? frac >= AIR_OUT : frac >= AIR_IN);
+    host.airClose = close;
+    view.showAir = !!f.airOk && close && !unit.tower && unit.cls !== 'hhw';
     if (!view.showAir && view.air) view.air.points.visible = false;
     view.update();
     view.tick(dt * (f.reducedMotion ? 0.3 : 1), now);
   }
+  const mine = (id) => !!id && (id === unit.id || !!unit.aliases?.includes(id) || host.subs.some((s) => s.id === id));
 
   function pick(raycaster) {
     if (!host.pickUnit || holder.parent?.visible === false || !holder.visible) return null;

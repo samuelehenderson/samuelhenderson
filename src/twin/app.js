@@ -886,6 +886,7 @@ export async function mountTwin({ stage, canvasHost, hud, sim, reducedMotion = f
   applyIntro();
   updateCamera(0, performance.now());
   // (both unit LODs and the hidden air streams included; whatever was hidden is hidden again after)
+  let compiledPrograms = null;
   const hidden = [];
   world.root.traverse((o) => {
     if (!o.visible) hidden.push(o);
@@ -895,7 +896,18 @@ export async function mountTwin({ stage, canvasHost, hud, sim, reducedMotion = f
     world.levelState.forEach((l) => (l.reveal.value = 1));
     world.root.traverse((o) => (o.visible = true));
     fx.group.traverse((o) => (o.visible = true)); // fx.update() re-hides what isn't in use
-    await Promise.race([renderer.compileAsync(scene, camera), new Promise((r) => setTimeout(r, 2500))]);
+    // compile for the target the scene really renders into (the composer's buffer: linear, no
+    // tone mapping), or every program is compiled twice: once here, again on the first frame
+    const prevTarget = renderer.getRenderTarget();
+    renderer.setRenderTarget(composer.readBuffer);
+    let compiling;
+    try {
+      compiling = renderer.compileAsync(scene, camera);
+    } finally {
+      renderer.setRenderTarget(prevTarget);
+    }
+    if (import.meta.env?.DEV) compiledPrograms = renderer.info.programs?.length;
+    await Promise.race([compiling, new Promise((r) => setTimeout(r, 2500))]);
     world.levelState.forEach((l, i) => (l.reveal.value = all[i]));
   } catch {
     /* compile errors surface on first render; nothing to do here */
@@ -975,8 +987,9 @@ export async function mountTwin({ stage, canvasHost, hud, sim, reducedMotion = f
       placeCtrlCam(v.target ? new Vector3(...v.target) : r.target.clone(), v.theta ?? r.theta, v.phi ?? r.phi, v.radius ?? r.radius);
     };
     api.debugInfo = () => ({ tier, pixelRatio, W, H, progress, mode, frame: emaFrame, calls: renderer.info.render.calls, tris: renderer.info.render.triangles, geos: renderer.info.memory.geometries, texs: renderer.info.memory.textures, progs: renderer.info.programs?.length });
-    api._dbg = { world, flows, env, scene, camera, renderer, sim, units };
+    api._dbg = { world, flows, env, scene, camera, renderer, sim, units, compiledPrograms };
     api.debugSelect = (id) => select(id, { focus: true });
+    api.debugPick = (x, y) => pickAt(x, y);
     window.__twinApp = api;
   }
   return api;

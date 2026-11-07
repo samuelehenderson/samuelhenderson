@@ -1381,7 +1381,8 @@ function makeVavMaterial(uniforms) {
         vec3 N = normalize(vN);
         float shade = 0.45 + 0.55 * max(N.y, 0.0) + 0.2 * abs(N.x);
         vec3 col = vCol * shade * (0.45 + 0.6 * uDay);
-        if (vPart > 0.5 && vPart < 1.5) col = mix(vec3(0.08, 0.05, 0.04), vec3(1.0, 0.45, 0.16) * 2.6, vZ2.r);
+        // the reheat coil section: its own sheet metal, glowing with the zone's reheat %
+        if (vPart > 0.5 && vPart < 1.5) col = mix(col * 0.8, vec3(1.0, 0.45, 0.16) * 2.6, vZ2.r);
         if (vPart > 1.5) col = vec3(0.5, 0.55, 0.62) * (0.5 + 0.5 * uDay) + vec3(0.3, 0.6, 1.0) * vZ2.b * uAir * 1.5;
         col += uAccent * vZ1.g * 0.9;
         float pulse = vZ1.r * (0.55 + 0.45 * sin(uTime * 5.0));

@@ -264,7 +264,7 @@ export function patchUnitMaterial(material, { reveal, levelY, glow, level = 0, o
   };
   material.customProgramCacheKey = () => `unit|${base.key}`;
   material.needsUpdate = true;
-  const rec = { level, base };
+  const rec = { level, reveal, base };
   UNIT_PATCHED.set(material, rec);
   return rec;
 }

@@ -8,7 +8,9 @@
 //   weather + sun → zone envelope / solar / internal gains → VAV PI (cooling flow, HW reheat)
 //   → AHU duct-static fan control, economizer, SAT reset 55–60 °F, CHW / HW coil valves
 //   → CHW plant (lead/lag chiller staging, soft-load, pumps) → condenser water + tower fan
-//   → HW plant (boiler firing, OAT reset) → building kW / kWh / plant COP → alarms.
+//   → heating hot water plant HHW-1 (steam to hot water: OAT reset, split-range 1/3 + 2/3 steam
+//     valves, two shell-and-tube exchangers staged on load, lead/lag VFD pumps on loop dP)
+//   → building kW / kWh / plant COP → alarms.
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const DEG = Math.PI / 180;
@@ -55,6 +57,9 @@ const DUCT_RISER = {
   'AHU-1': { sa: [-5, -3.4], ra: [5, -3.4], side: -1 },
   'AHU-2': { sa: [-5, 3.4], ra: [5, 3.4], side: 1 },
 };
+
+// chillers on B1 (origin z); each one's CHW pump is on its own skid
+const CH_Z = [['CH-1', -8.2], ['CH-2', -4.0]];
 
 const EXPOSURE = [['NW', 'N', 'N', 'NE'], ['W', null, null, 'E'], ['SW', 'S', 'S', 'SE']];
 const TAG = [['NW', 'N1', 'N2', 'NE'], ['W', null, null, 'E'], ['SW', 'S1', 'S2', 'SE']];
@@ -121,32 +126,68 @@ function buildLayout() {
     }
   }
 
+  // Every unit is ClarityView's real-size model (the twin's units chunk draws it at this
+  // origin and rotation; units.check (h) holds the two in step). x, z: the model's origin;
+  // w × h × d: its measured size (labels, the footprint check, the fallback box). Pumps drawn
+  // inside a unit (each chiller's skid pump, the plant's two HW pumps) name it as `parent`.
+  // (AHU height includes its 0.3 m roof curb.)
   const equipment = [
-    { id: 'AHU-1', kind: 'ahu', name: 'Air Handler AHU-1', level: 'RF', x: 0, y: 24, z: -8.5, w: 9, h: 3.2, d: 3, rotY: 0, serves: ['L1', 'L2', 'L3'] },
-    { id: 'AHU-2', kind: 'ahu', name: 'Air Handler AHU-2', level: 'RF', x: 0, y: 24, z: 8.5, w: 9, h: 3.2, d: 3, rotY: 0, serves: ['L4', 'L5', 'L6'] },
-    { id: 'CT-1', kind: 'tower', name: 'Cooling Tower CT-1', level: 'RF', x: 14, y: 24, z: 0, w: 4.5, h: 4, d: 4.5, rotY: 0, serves: ['CH-1', 'CH-2'] },
-    { id: 'CH-1', kind: 'chiller', name: 'Chiller CH-1', level: 'B1', x: 13, y: -4.5, z: -8, w: 6, h: 2.6, d: 2.4, rotY: 0, serves: ['AHU-1', 'AHU-2'] },
-    { id: 'CH-2', kind: 'chiller', name: 'Chiller CH-2', level: 'B1', x: 13, y: -4.5, z: -3.5, w: 6, h: 2.6, d: 2.4, rotY: 0, serves: ['AHU-1', 'AHU-2'] },
-    { id: 'B-1', kind: 'boiler', name: 'Boiler B-1', level: 'B1', x: -13, y: -4.5, z: 5, w: 3.6, h: 2.2, d: 2.4, rotY: 0, serves: ['AHU-1', 'AHU-2', 'VAV reheat'] },
-    { id: 'CHWP-1', kind: 'pump', name: 'CHW Pump CHWP-1', level: 'B1', x: 8.6, y: -4.5, z: -8, w: 1.3, h: 1.0, d: 0.8, rotY: 0, serves: ['CH-1'] },
-    { id: 'CHWP-2', kind: 'pump', name: 'CHW Pump CHWP-2', level: 'B1', x: 8.6, y: -4.5, z: -3.5, w: 1.3, h: 1.0, d: 0.8, rotY: 0, serves: ['CH-2'] },
-    { id: 'CWP-1', kind: 'pump', name: 'Condenser Pump CWP-1', level: 'B1', x: 18.4, y: -4.5, z: -0.9, w: 1.3, h: 1.0, d: 0.8, rotY: Math.PI / 2, serves: ['CH-1', 'CH-2', 'CT-1'] },
-    { id: 'HWP-1', kind: 'pump', name: 'HW Pump HWP-1', level: 'B1', x: -8.8, y: -4.5, z: 5, w: 1.3, h: 1.0, d: 0.8, rotY: 0, serves: ['B-1'] },
+    { id: 'AHU-1', kind: 'ahu', name: 'Air Handler AHU-1', level: 'RF', x: 0, y: 24, z: -8.5, w: 13.3, h: 3.04, d: 3.3, rotY: 0, serves: ['L1', 'L2', 'L3'] },
+    { id: 'AHU-2', kind: 'ahu', name: 'Air Handler AHU-2', level: 'RF', x: 0, y: 24, z: 8.5, w: 13.3, h: 3.04, d: 3.3, rotY: Math.PI, serves: ['L4', 'L5', 'L6'] },
+    { id: 'CT-1', kind: 'tower', name: 'Cooling Tower CT-1', level: 'RF', x: 13.6, y: 24, z: 0, w: 8.08, h: 6.33, d: 7.64, rotY: 0, serves: ['CH-1', 'CH-2'] },
+    { id: 'CH-1', kind: 'chiller', name: 'Chiller CH-1', level: 'B1', x: 13.6, y: -4.5, z: -8.2, w: 7.69, h: 2.36, d: 2.45, rotY: 0, serves: ['AHU-1', 'AHU-2'] },
+    { id: 'CH-2', kind: 'chiller', name: 'Chiller CH-2', level: 'B1', x: 13.6, y: -4.5, z: -4.0, w: 7.69, h: 2.36, d: 2.45, rotY: 0, serves: ['AHU-1', 'AHU-2'] },
+    { id: 'HHW-1', kind: 'hhw', name: 'Heating Hot Water Plant HHW-1', level: 'B1', x: -13.0, y: -4.5, z: 3.4, w: 6.6, h: 2.43, d: 4.6, rotY: 0, serves: ['AHU-1', 'AHU-2', 'VAV reheat'] },
+    { id: 'CHWP-1', kind: 'pump', name: 'CHW Pump CHWP-1', level: 'B1', x: 10.8, y: -4.5, z: -7.7, w: 0.9, h: 0.8, d: 0.6, rotY: 0, serves: ['CH-1'], parent: 'CH-1' },
+    { id: 'CHWP-2', kind: 'pump', name: 'CHW Pump CHWP-2', level: 'B1', x: 10.8, y: -4.5, z: -3.5, w: 0.9, h: 0.8, d: 0.6, rotY: 0, serves: ['CH-2'], parent: 'CH-2' },
+    { id: 'CWP-1', kind: 'pump', name: 'Condenser Pump CWP-1', level: 'B1', x: 10.9, y: -4.5, z: 1.55, w: 4.1, h: 2.13, d: 2.8, rotY: 0, serves: ['CH-1', 'CH-2', 'CT-1'] },
+    { id: 'HWP-1', kind: 'pump', name: 'HW Pump HWP-1', level: 'B1', x: -13.55, y: -4.5, z: 5.2, w: 0.6, h: 1.0, d: 1.3, rotY: 0, serves: ['HHW-1'], parent: 'HHW-1' },
+    { id: 'HWP-2', kind: 'pump', name: 'HW Pump HWP-2', level: 'B1', x: -12.35, y: -4.5, z: 5.2, w: 0.6, h: 1.0, d: 1.3, rotY: 0, serves: ['HHW-1'], parent: 'HHW-1' },
   ];
 
+  // Where services meet the models (world, at the level's base height): the AHU discharge
+  // collar and return-air end, the coil connections, the tower's CW nozzles, each chiller's
+  // CHW and CW nozzles, the condenser pump's suction and discharge, the plant's HW supply and
+  // return. Measured from the models; the units chunk compares them in DEV (port mismatch).
+  const ports = {};
+  for (const [ahu, s] of [['AHU-1', -1], ['AHU-2', 1]]) {
+    ports[ahu] = {
+      sa: [-6.65, 25.5, 8.5 * s], ra: [6.1, 25.5, 8.5 * s],
+      hws: [-1.6, 24.66, 6.6 * s], hwr: [-1.6, 26.34, 6.6 * s],
+      chws: [-2.5, 24.66, 6.6 * s], chwr: [-2.5, 26.34, 6.6 * s],
+    };
+  }
+  ports['CT-1'] = { cws: [9.15, 24.6, -0.6], cwr: [9.15, 25.35, 0.6] };
+  for (const [ch, cz] of CH_Z) {
+    ports[ch] = { chws: [9.35, -3.64, cz + 0.5], chwr: [9.35, -4.08, cz + 0.5], cws: [9.35, -4.08, cz - 0.52], cwr: [9.35, -3.64, cz - 0.52] };
+  }
+  ports['CWP-1'] = { suction: [8.85, -3.9, 0.6], discharge: [12.95, -2.75, 0.6] };
+  ports['HHW-1'] = { hws: [-14.75, -2.75, 6.4], hwr: [-9.9, -4.15, 5.95] };
+  const port = (ref) => { const [id, k] = ref.split(':'); return ports[id][k].slice(); };
+
   const runs = [];
-  const add = (id, kind, level, serves, from, to, points, size) =>
-    runs.push({ id, kind, level, serves, from, to, points, size });
+  // ends: [start, end] port refs ('AHU-1:sa') for a run that meets a model; the point there IS the port
+  const add = (id, kind, level, serves, from, to, points, size, ends) => {
+    const r = { id, kind, level, serves, from, to, points, size };
+    if (ends) {
+      r.ends = ends;
+      if (ends[0]) points[0] = port(ends[0]);
+      if (ends[1]) points[points.length - 1] = port(ends[1]);
+    }
+    runs.push(r);
+  };
 
   // ---- air: supply + return risers, per-floor rings, branch to every VAV
+  // (each AHU's discharge collar faces west and its return end east: the supply main runs
+  // round the west end into the core, the return main round the east end)
   for (const ahu of ['AHU-1', 'AHU-2']) {
     const R = DUCT_RISER[ahu], s = R.side, az = 8.5 * s;
     const floors = ahu === 'AHU-1' ? [1, 2, 3] : [4, 5, 6];
     const low = (floors[0] - 1) * FLOOR_H;
     add(`sa-riser-${ahu}`, 'sa', null, ahu, ahu, `L${floors[0]}`,
-      [[-4.5, 25.4, az], [R.sa[0], 25.4, az], [R.sa[0], 25.4, R.sa[1]], [R.sa[0], low + SA_Y, R.sa[1]]], 0.9);
+      [[-6.65, 25.5, az], [-7.6, 25.5, az], [-7.6, 25.5, R.sa[1]], [R.sa[0], 25.5, R.sa[1]], [R.sa[0], low + SA_Y, R.sa[1]]], 1.3, [`${ahu}:sa`, null]);
     add(`ra-riser-${ahu}`, 'ra', null, ahu, `L${floors[0]}`, ahu,
-      [[R.ra[0], low + RA_Y, R.ra[1]], [R.ra[0], 25.8, R.ra[1]], [R.ra[0], 25.8, az], [4.5, 25.8, az]], 0.85);
+      [[R.ra[0], low + RA_Y, R.ra[1]], [R.ra[0], 25.5, R.ra[1]], [7.4, 25.5, R.ra[1]], [7.4, 25.5, az], [6.1, 25.5, az]], 1.2, [null, `${ahu}:ra`]);
     for (const n of floors) {
       const y = (n - 1) * FLOOR_H, lv = `L${n}`;
       const ys = y + SA_Y, yr = y + RA_Y, rx = R.sa[0], rz = R.sa[1];
@@ -163,67 +204,73 @@ function buildLayout() {
     add(`sa-${z.id}`, 'sa', z.level, z.id, z.ahu, z.vav, branchPts(z.cx, z.cz, SA_RING.x, SA_RING.z, y + SA_Y), 0.32);
   }
 
-  // ---- heating hot water: B1 boiler loop, riser, per-floor reheat loops + VAV branches, AHU coils
-  add('hws-b1', 'hws', 'B1', 'B-1', 'B-1', 'riser-hws',
-    [[-13.4, -2.3, 4.4], [-13.4, -0.9, 4.4], [-13.4, -0.9, RISER.hws[1]], [RISER.hws[0], -0.9, RISER.hws[1]]], 0.16);
-  add('hwr-b1', 'hwr', 'B1', 'B-1', 'riser-hwr', 'B-1',
-    [[RISER.hwr[0], -1.3, RISER.hwr[1]], [-7.4, -1.3, RISER.hwr[1]], [-7.4, -1.3, 5], [-7.4, -3.9, 5], [-11.2, -3.9, 5]], 0.16);
-  add('hws-riser', 'hws', null, 'B-1', 'B-1', 'RF',
+  // ---- heating hot water: HHW-1 plant ↔ B1 headers ↔ riser, per-floor reheat loops + VAV branches, AHU coils
+  add('hws-b1', 'hws', 'B1', 'HHW-1', 'HHW-1', 'riser-hws',
+    [[-14.75, -2.75, 6.4], [-14.75, -2.75, 6.9], [-14.75, -0.9, 6.9], [-7.6, -0.9, 6.9], [-7.6, -0.9, RISER.hws[1]], [RISER.hws[0], -0.9, RISER.hws[1]]], 0.16, ['HHW-1:hws', null]);
+  add('hwr-b1', 'hwr', 'B1', 'HHW-1', 'riser-hwr', 'HHW-1',
+    [[RISER.hwr[0], -1.3, RISER.hwr[1]], [-8.2, -1.3, RISER.hwr[1]], [-8.2, -1.3, 5.95], [-8.2, -4.15, 5.95], [-9.9, -4.15, 5.95]], 0.16, [null, 'HHW-1:hwr']);
+  add('hws-riser', 'hws', null, 'HHW-1', 'HHW-1', 'RF',
     [[RISER.hws[0], -0.9, RISER.hws[1]], [RISER.hws[0], 24.8, RISER.hws[1]]], 0.14);
-  add('hwr-riser', 'hwr', null, 'B-1', 'RF', 'B-1',
+  add('hwr-riser', 'hwr', null, 'HHW-1', 'RF', 'HHW-1',
     [[RISER.hwr[0], 24.5, RISER.hwr[1]], [RISER.hwr[0], -1.3, RISER.hwr[1]]], 0.14);
   for (let n = 1; n <= 6; n++) {
     const y = (n - 1) * FLOOR_H, lv = `L${n}`;
     const yh = y + HWS_Y, yq = y + HWR_Y, X = HWS_RING.x, Z = HWS_RING.z, Q = HWR_RING.x, W = HWR_RING.z;
-    add(`hws-${lv}`, 'hws', lv, 'B-1', 'riser-hws', lv, [[RISER.hws[0], yh, RISER.hws[1]], [-X, yh, RISER.hws[1]], [-X, yh, -Z],
+    add(`hws-${lv}`, 'hws', lv, 'HHW-1', 'riser-hws', lv, [[RISER.hws[0], yh, RISER.hws[1]], [-X, yh, RISER.hws[1]], [-X, yh, -Z],
       [X, yh, -Z], [X, yh, Z], [-X, yh, Z], [-X, yh, RISER.hws[1]]], 0.08);
-    add(`hwr-${lv}`, 'hwr', lv, 'B-1', lv, 'riser-hwr', [[-Q, yq, RISER.hwr[1]], [-Q, yq, W], [Q, yq, W], [Q, yq, -W],
+    add(`hwr-${lv}`, 'hwr', lv, 'HHW-1', lv, 'riser-hwr', [[-Q, yq, RISER.hwr[1]], [-Q, yq, W], [Q, yq, W], [Q, yq, -W],
       [-Q, yq, -W], [-Q, yq, RISER.hwr[1]], [RISER.hwr[0], yq, RISER.hwr[1]]], 0.08);
   }
   for (const z of zones) {
     const y = (z.floor - 1) * FLOOR_H;
-    add(`hws-${z.id}`, 'hws', z.level, z.id, 'B-1', z.vav, branchPts(z.cx, z.cz, HWS_RING.x, HWS_RING.z, y + HWS_Y, y + SA_Y - 0.2), 0.04);
+    add(`hws-${z.id}`, 'hws', z.level, z.id, 'HHW-1', z.vav, branchPts(z.cx, z.cz, HWS_RING.x, HWS_RING.z, y + HWS_Y, y + SA_Y - 0.2), 0.04);
   }
+  // AHU heating coil: supply into its bottom connection, return from its top (service side, facing the core)
   for (const [ahu, s] of [['AHU-1', -1], ['AHU-2', 1]]) {
     add(`hws-${ahu}`, 'hws', 'RF', ahu, 'riser-hws', ahu, [[RISER.hws[0], 24.8, RISER.hws[1]], [-6.6, 24.8, RISER.hws[1]],
-      [-6.6, 24.8, 6.25 * s], [1.3, 24.8, 6.25 * s], [1.3, 24.8, 7 * s]], 0.1);
-    add(`hwr-${ahu}`, 'hwr', 'RF', ahu, ahu, 'riser-hwr', [[0.9, 24.5, 7 * s], [0.9, 24.5, 5.9 * s], [-6.9, 24.5, 5.9 * s],
-      [-6.9, 24.5, RISER.hwr[1]], [RISER.hwr[0], 24.5, RISER.hwr[1]]], 0.1);
+      [-6.6, 24.8, 6.45 * s], [-6.6, 24.25, 6.45 * s], [-1.6, 24.25, 6.45 * s], [-1.6, 24.66, 6.45 * s], [-1.6, 24.66, 6.6 * s]], 0.1, [null, `${ahu}:hws`]);
+    add(`hwr-${ahu}`, 'hwr', 'RF', ahu, ahu, 'riser-hwr', [[-1.6, 26.34, 6.6 * s], [-1.6, 26.34, 6.2 * s], [-1.6, 24.5, 6.2 * s],
+      [-6.9, 24.5, 6.2 * s], [-6.9, 24.5, RISER.hwr[1]], [RISER.hwr[0], 24.5, RISER.hwr[1]]], 0.1, [`${ahu}:hwr`, null]);
   }
 
   // ---- chilled water: chillers ↔ B1 headers ↔ riser ↔ roof AHU cooling coils
-  for (const [ch, cz, pump] of [['CH-1', -8, 'CHWP-1'], ['CH-2', -3.5, 'CHWP-2']]) {
+  // (every chiller nozzle is on the pump-skid end, facing west: CHW on the core side, CW outboard;
+  // the branches are sized close to the chiller's own nozzles, which are smaller than the risers)
+  for (const [ch, cz] of CH_Z) {
     add(`chwr-${ch}`, 'chwr', 'B1', ch, 'riser-chwr', ch, [[RISER.chwr[0], -1.3, RISER.chwr[1]], [7.2, -1.3, RISER.chwr[1]],
-      [7.2, -1.3, cz], [7.2, -3.9, cz], [10, -3.9, cz]], 0.22);
-    add(`chws-${ch}`, 'chws', 'B1', ch, ch, 'riser-chws', [[10, -2.6, cz + 0.7], [9.4, -2.6, cz + 0.7], [9.4, -0.9, cz + 0.7],
-      [9.4, -0.9, RISER.chws[1]], [RISER.chws[0], -0.9, RISER.chws[1]]], 0.22);
-    // condenser water to / from this chiller
-    add(`cws-${ch}`, 'cws', 'B1', ch, 'CWP-1', ch, [[18.4, -3.9, cz - 0.7], [16, -3.9, cz - 0.7]], 0.24);
-    add(`cwr-${ch}`, 'cwr', 'B1', ch, ch, 'riser-cwr', [[16, -2.4, cz + 0.7], [17.4, -2.4, cz + 0.7], [17.4, -1.6, cz + 0.7],
-      [17.4, -1.6, RISER.cwr[1]], [RISER.cwr[0], -1.6, RISER.cwr[1]]], 0.24);
-    void pump;
+      [7.2, -1.3, cz + 0.5], [7.2, -4.08, cz + 0.5], [9.35, -4.08, cz + 0.5]], 0.16, [null, `${ch}:chwr`]);
+    add(`chws-${ch}`, 'chws', 'B1', ch, ch, 'riser-chws', [[9.35, -3.64, cz + 0.5], [8.4, -3.64, cz + 0.5], [8.4, -0.9, cz + 0.5],
+      [8.4, -0.9, RISER.chws[1]], [RISER.chws[0], -0.9, RISER.chws[1]]], 0.16, [`${ch}:chws`, null]);
+    // condenser water to / from this chiller (CWP-1's discharge header runs over the chillers); the
+    // CW nozzles are stacked (in below, out above), so the supply drops beside the return's
+    // take-off and slides in under it
+    add(`cws-${ch}`, 'cws', 'B1', ch, 'CWP-1', ch, [[12.95, -2.75, 0.6], [13.6, -2.75, 0.6], [13.6, -1.0, 0.6], [13.6, -1.0, cz - 0.97],
+      [8.9, -1.0, cz - 0.97], [8.9, -4.08, cz - 0.97], [8.9, -4.08, cz - 0.52], [9.35, -4.08, cz - 0.52]], 0.2, ['CWP-1:discharge', `${ch}:cws`]);
+    add(`cwr-${ch}`, 'cwr', 'B1', ch, ch, 'riser-cwr', [[9.35, -3.64, cz - 0.52], [8.1, -3.64, cz - 0.52], [8.1, -1.6, cz - 0.52],
+      [8.1, -1.6, RISER.cwr[1]], [RISER.cwr[0], -1.6, RISER.cwr[1]]], 0.2, [`${ch}:cwr`, null]);
   }
   add('chws-riser', 'chws', null, 'CH', 'B1', 'RF', [[RISER.chws[0], -0.9, RISER.chws[1]], [RISER.chws[0], 24.6, RISER.chws[1]]], 0.2);
   add('chwr-riser', 'chwr', null, 'CH', 'RF', 'B1', [[RISER.chwr[0], 24.9, RISER.chwr[1]], [RISER.chwr[0], -1.3, RISER.chwr[1]]], 0.2);
+  // AHU cooling coil: supply into its bottom connection, return from its top
   for (const [ahu, s] of [['AHU-1', -1], ['AHU-2', 1]]) {
     add(`chws-${ahu}`, 'chws', 'RF', ahu, 'riser-chws', ahu, [[RISER.chws[0], 24.6, RISER.chws[1]], [6.6, 24.6, RISER.chws[1]],
-      [6.6, 24.6, 6.4 * s], [0.3, 24.6, 6.4 * s], [0.3, 24.6, 7 * s]], 0.16);
-    add(`chwr-${ahu}`, 'chwr', 'RF', ahu, ahu, 'riser-chwr', [[-0.3, 24.9, 7 * s], [-0.3, 24.9, 6.1 * s], [6.9, 24.9, 6.1 * s],
-      [6.9, 24.9, RISER.chwr[1]], [RISER.chwr[0], 24.9, RISER.chwr[1]]], 0.16);
+      [6.6, 24.6, 6.45 * s], [6.6, 25.05, 6.45 * s], [-2.5, 25.05, 6.45 * s], [-2.5, 24.66, 6.45 * s], [-2.5, 24.66, 6.6 * s]], 0.16, [null, `${ahu}:chws`]);
+    add(`chwr-${ahu}`, 'chwr', 'RF', ahu, ahu, 'riser-chwr', [[-2.5, 26.34, 6.6 * s], [-2.5, 26.34, 5.9 * s], [-2.5, 24.9, 5.9 * s],
+      [6.9, 24.9, 5.9 * s], [6.9, 24.9, RISER.chwr[1]], [RISER.chwr[0], 24.9, RISER.chwr[1]]], 0.16, [`${ahu}:chwr`, null]);
   }
 
   // ---- condenser water: tower basin → riser → CWP-1 → chillers → riser → tower spray
-  add('cws-riser', 'cws', null, 'CT-1', 'CT-1', 'B1', [[11.75, 25.2, RISER.cws[1]], [RISER.cws[0], 25.2, RISER.cws[1]],
-    [RISER.cws[0], -0.5, RISER.cws[1]]], 0.26);
-  add('cws-b1', 'cws', 'B1', 'CWP-1', 'riser-cws', 'CWP-1', [[RISER.cws[0], -0.5, RISER.cws[1]], [18.4, -0.5, RISER.cws[1]],
-    [18.4, -3.9, RISER.cws[1]], [18.4, -3.9, -8.7]], 0.26);
-  add('cwr-riser', 'cwr', null, 'CT-1', 'B1', 'CT-1', [[RISER.cwr[0], -1.6, RISER.cwr[1]], [RISER.cwr[0], 27.2, RISER.cwr[1]],
-    [11.75, 27.2, RISER.cwr[1]]], 0.26);
+  add('cws-riser', 'cws', null, 'CT-1', 'CT-1', 'B1', [[9.15, 24.6, -0.6], [8.6, 24.6, -0.6], [8.6, 25.6, -0.6], [8.6, 25.6, RISER.cws[1]],
+    [RISER.cws[0], 25.6, RISER.cws[1]], [RISER.cws[0], -0.5, RISER.cws[1]]], 0.26, ['CT-1:cws', null]);
+  add('cws-b1', 'cws', 'B1', 'CWP-1', 'riser-cws', 'CWP-1', [[RISER.cws[0], -0.5, RISER.cws[1]], [7.6, -0.5, RISER.cws[1]],
+    [7.6, -3.9, RISER.cws[1]], [8.85, -3.9, RISER.cws[1]]], 0.26, [null, 'CWP-1:suction']);
+  add('cwr-riser', 'cwr', null, 'CT-1', 'B1', 'CT-1', [[RISER.cwr[0], -1.6, RISER.cwr[1]], [RISER.cwr[0], 26.2, RISER.cwr[1]],
+    [8.9, 26.2, RISER.cwr[1]], [8.9, 25.35, RISER.cwr[1]], [8.9, 25.35, 0.6], [9.15, 25.35, 0.6]], 0.26, [null, 'CT-1:cwr']);
 
   return {
     footprint: { w: 40, d: 24 },
     floorHeight: FLOOR_H,
-    levels, core, zones, vavs, equipment, runs,
+    levels, core, zones, vavs, equipment, runs, ports,
     risers: { ...RISER, duct: DUCT_RISER },
   };
 }
@@ -306,7 +353,12 @@ const K_MIX = 0.15;         // inter-zone / plenum mixing, 1/h
 const VAV_KP = 60, VAV_KI = 120;   // zone PI: % per °F, % per °F·h
 const MIN_FLOW = 0.3, HEAT_FLOW = 0.35;
 const CH_CAP = 100;         // tons per chiller
-const BOILER_CAP = 1000;    // MBH
+// heating hot water plant HHW-1: steam to hot water
+const STEAM_CAP = 1200;     // MBH with both steam valves full open (1/3 valve 400, 2/3 valve 800)
+const HX_CAP = 450;         // MBH per shell-and-tube exchanger at design flow
+const PUMP_FLOW = 0.6;      // loop flow fraction one HW pump gives at 100 % speed
+const HW_PUMPS = ['HWP-1', 'HWP-2'];
+const STEAM_RAMP = 100 / 600; // steam valve demand opens at most 10 %/min (warm-up without water hammer)
 const SUB_DT = 15;          // max internal step, sim seconds
 const MAX_SUB = 40;
 const ALARM_HOLD = 45 * 60; // s after a mode change / time jump before space alarms arm
@@ -330,7 +382,14 @@ export function createSim({ seed = 7, startHour = 9.5 } = {}) {
     occupancy: 0, occupiedMode: false,
     zones: {}, ahus: {},
     plant: {
-      chillers: {}, boiler: { on: false, fire: 0, hws: 110, hwr: 106, load: 0 },
+      chillers: {},
+      hhw: {
+        enabled: false, hws: 110, hwr: 106, u: 0,
+        cv1: 0, cv1Fb: 0, cv2: 0, cv2Fb: 0, byp: 0, bypFb: 0,
+        dp: 0, dpSp: 8, load: 0, steam: 0,
+        hx: [{ iso1: 100, iso2: 1 }, { iso1: 0, iso2: 0 }],
+        lagHx: false, leadPump: 'HWP-1', lagPump: false, tempAlarm: false,
+      },
       tower: { on: false, fan: 0, cws: 72, cwr: 72, heat: 0 },
       pumps: {}, chwsSp: 44, hwsSp: 140, chwLoad: 0, hwLoad: 0, cwsSp: 75, chws: 66, chwr: 66.5,
     },
@@ -374,6 +433,7 @@ export function createSim({ seed = 7, startHour = 9.5 } = {}) {
     const s = {
       on: false, cmd: false, sfSpeed: 0, rfSpeed: 0, oad: 0, ccv: 0, hcv: 0, sat: 70, satSp: 57, mat: 72, rat: 73,
       ssp: 0, sspSp: 1.5, cfm: 0, cfmDesign: design, econ: false, alarm: null, kw: 0, coilTons: 0, coilMbh: 0,
+      rad: 100, ead: 0, pfDp: 0, ffDp: 0, sfFault: false,
     };
     state.ahus[id] = s;
     return { id, s, zs, design, failed: false, runT: 0, satHiT: 0 };
@@ -382,12 +442,14 @@ export function createSim({ seed = 7, startHour = 9.5 } = {}) {
   // ---------- plant
   const CH_IDS = ['CH-1', 'CH-2'];
   const C = CH_IDS.map((id) => {
-    const s = { on: false, load: 0, chws: 66, chwr: 66, kw: 0, tons: 0, status: 'off', lead: id === 'CH-1' };
+    const s = { on: false, load: 0, chws: 66, chwr: 66, cwl: 72, kw: 0, tons: 0, status: 'off', lead: id === 'CH-1' };
     P.chillers[id] = s;
-    return { id, s, limit: 0, timer: 0, tripped: false };
+    return { id, s, limit: 0, timer: 0, tripped: false, share: 0 };
   });
-  for (const id of ['CHWP-1', 'CHWP-2', 'HWP-1', 'CWP-1']) P.pumps[id] = { on: false, speed: 0, kw: 0 };
-  const plantCtl = { enabled: false, offT: 0, runT: 0, lagWanted: false, lagT: 0, lagOffT: 0, chwsHiT: 0, boilerOn: false };
+  for (const id of ['CHWP-1', 'CHWP-2', 'HWP-1', 'HWP-2', 'CWP-1']) P.pumps[id] = { on: false, speed: 0, kw: 0 };
+  const plantCtl = { enabled: false, offT: 0, runT: 0, lagWanted: false, lagT: 0, lagOffT: 0, chwsHiT: 0 };
+  // HHW-1 sequence timers (internal): pump lag on / off, HX-2 in / out, plant run time, HWS-low debounce
+  const hwCtl = { lagT: 0, lagOffT: 0, hxInT: 0, hxOutT: 0, runT: 0, lowT: 0 };
 
   // ---------- faults & alarms (internal)
   const faults = { stuckZone: null, trip: false, fanFail: false, hotDay: false, hotBoost: 0 };
@@ -487,7 +549,7 @@ export function createSim({ seed = 7, startHour = 9.5 } = {}) {
     state.occupancy = areaSum > 0 ? occSum / areaSum : 0;
 
     // ---- air handlers + their VAVs
-    const hws = P.boiler.hws;
+    const hws = P.hhw.hws;
     for (let ai = 0; ai < A.length; ai++) {
       const a = A[ai], s = a.s, zs = a.zs;
       let maxT = -1e9, minT = 1e9;
@@ -559,6 +621,9 @@ export function createSim({ seed = 7, startHour = 9.5 } = {}) {
       let oaReq = oaMin;
       if (s.econ) oaReq = clamp((s.rat - (s.satSp - fanHeat)) / Math.max(0.5, s.rat - oat), oaMin, 1);
       s.oad = relax(s.oad, running ? oaReq * 100 : 0, dt, 40);
+      // return damper linked to the OA damper; relief opens once OA is above the 20 % minimum
+      s.rad = 100 - s.oad;
+      s.ead = running ? clamp((s.oad - 20) / 0.8, 0, 100) : 0;
       const oaf = s.oad / 100;
       s.mat = relax(s.mat, running ? oaf * oat + (1 - oaf) * s.rat : lerp(s.rat, oat, 0.5), dt, running ? 30 : 600);
 
@@ -585,6 +650,11 @@ export function createSim({ seed = 7, startHour = 9.5 } = {}) {
       // opens (more of the return has to leave through the relief dampers)
       s.rfSpeed = relax(s.rfSpeed, running ? clamp(s.sfSpeed * 0.86 + (s.oad - 20) * 0.05, 15, 100) : 0, dt, a.failed ? 8 : 20);
       s.on = running;
+      // filter dP (in.WC) rises with the square of the airflow: pre-filter and final filter
+      const qf = s.cfm / a.design;
+      s.pfDp = 0.35 * qf * qf;
+      s.ffDp = 0.55 * qf * qf;
+      s.sfFault = a.failed;
       const rp = s.rfSpeed / 100;
       s.kw = 22 * sp * sp * sp + 7.5 * rp * rp * rp;
       a.runT = running ? a.runT + dt : 0;
@@ -670,6 +740,7 @@ export function createSim({ seed = 7, startHour = 9.5 } = {}) {
     for (let i = 0; i < 2; i++) {
       const c = C[i], cs = c.s;
       const share = cs.status === 'running' && capAvail > 0 ? (delivered * CH_CAP * c.limit) / capAvail : 0;
+      c.share = share;
       const plr = share / CH_CAP;
       cs.tons = share;
       cs.load = clamp(plr * 100, 0, 100);
@@ -698,37 +769,102 @@ export function createSim({ seed = 7, startHour = 9.5 } = {}) {
       T.cws = relax(T.cws, (wb + oat) / 2, dt, 3600);
       T.cwr = relax(T.cwr, T.cws, dt, 1800);
     }
+    // condenser water leaving each chiller (its own rejected heat over the tower's supply)
+    for (let i = 0; i < 2; i++) {
+      const c = C[i], cs = c.s;
+      const tgt = cs.status === 'running' ? T.cws + clamp((10 * (c.share + cs.kw / 3.517)) / CH_CAP, 0.5, 14) : T.cws;
+      cs.cwl = relax(cs.cwl, tgt, dt, 90);
+    }
     const cwp = P.pumps['CWP-1'];
     cwp.on = T.on;
     cwp.speed = relax(cwp.speed, T.on ? 70 + 15 * nCh : 0, dt, 20);
     cwp.kw = 11 * Math.pow(cwp.speed / 100, 3);
 
-    // ---- heating hot water: boiler with OAT reset, cycling at low fire
-    const B = P.boiler;
+    // ---- heating hot water plant HHW-1: steam to hot water
+    // OAT reset 160 → 120 °F; enabled while occupied or while anything calls for heat
+    const H = P.hhw;
     P.hwsSp = clamp(160 - ((oat - 40) * 40) / 35, 120, 160);
     const hwEnable = occMode || hwDemand > 5;
-    const loss = (40 * (B.hws - 75)) / 85;
-    const fireReq = clamp(((hwLoad + loss) / BOILER_CAP) * 100 + 6 * (P.hwsSp - B.hws), 20, 100);
-    if (!hwEnable) plantCtl.boilerOn = false;
-    else if (!plantCtl.boilerOn) { if (hwDemand > 15 || B.hws < P.hwsSp - 8) plantCtl.boilerOn = true; }
-    else if (fireReq <= 20 && B.hws > P.hwsSp + 6) plantCtl.boilerOn = false;
-    B.on = plantCtl.boilerOn;
-    B.fire = relax(B.fire, B.on ? fireReq : 0, dt, B.on ? 30 : 10);
-    const out = B.on ? (B.fire / 100) * BOILER_CAP : 0;
-    const hwp = P.pumps['HWP-1'];
-    hwp.on = hwEnable;
-    B.hws = clamp(B.hws + ((out - hwLoad - (hwp.on ? loss : loss * 0.5)) / 250) * (dt / 60), 60, 200);
-    B.hwr = relax(B.hwr, hwp.on ? B.hws - clamp(3 + (25 * hwLoad) / 500, 2, 30) : B.hws - 1, dt, 60);
-    B.load = hwLoad;
+    H.enabled = hwEnable;
+    hwCtl.runT = hwEnable ? hwCtl.runT + dt : 0;
+
+    // pumps: lead / lag VFD pumps on loop dP; the lead alternates daily (HWP-1 on even days)
+    const leadId = day % 2 === 0 ? 'HWP-1' : 'HWP-2';
+    const lagId = leadId === 'HWP-1' ? 'HWP-2' : 'HWP-1';
+    const leadP = P.pumps[leadId], lagP = P.pumps[lagId];
+    H.leadPump = leadId;
+    const open = 0.25 + 0.75 * clamp(hwDemand / 400, 0, 1);   // how open the loop's valves are
+    const fReq = Math.sqrt((H.dpSp * open) / 14);              // flow that holds the dP setpoint
+    if (!hwEnable) { H.lagPump = false; hwCtl.lagT = 0; hwCtl.lagOffT = 0; }
+    else if (!H.lagPump) {
+      hwCtl.lagT = leadP.speed > 92 ? hwCtl.lagT + dt : 0;
+      if (hwCtl.lagT >= 300) { H.lagPump = true; hwCtl.lagT = 0; hwCtl.lagOffT = 0; }
+    } else {
+      hwCtl.lagOffT = leadP.speed < 45 && lagP.speed < 45 ? hwCtl.lagOffT + dt : 0;
+      if (hwCtl.lagOffT >= 600) { H.lagPump = false; hwCtl.lagOffT = 0; }
+    }
+    leadP.on = hwEnable;
+    lagP.on = hwEnable && H.lagPump;
+    const nRun = (leadP.on ? 1 : 0) + (lagP.on ? 1 : 0);
+    const spdTarget = nRun ? clamp((100 * fReq) / (PUMP_FLOW * nRun), 30, 100) : 0;
+    let flow = 0;
+    for (const id of HW_PUMPS) {
+      const p = P.pumps[id];
+      p.speed = relax(p.speed, p.on ? spdTarget : 0, dt, 20);
+      p.kw = 3.7 * Math.pow(p.speed / 100, 3);
+      if (p.on && p.speed > 5) flow += (PUMP_FLOW * p.speed) / 100;
+    }
+    H.dp = relax(H.dp, flow > 0 ? (14 * flow * flow) / open : 0, dt, 10);
+    const flowing = flow > 0.05;
+
+    // steam valves, split range on HWS: feedforward on load + loss, plus P on the HWS error;
+    // the demand opens at STEAM_RAMP; the 1/3 valve opens fully before the 2/3 valve moves,
+    // and the 2/3 valve is held shut until the 1/3 valve's feedback proves it open
+    const loss = (40 * (H.hws - 75)) / 85;
+    const uReq = hwEnable ? clamp(((hwLoad + loss) / STEAM_CAP) * 100 + 6 * (P.hwsSp - H.hws), 0, 100) : 0;
+    H.u = hwEnable ? Math.min(uReq, H.u + STEAM_RAMP * dt) : 0;
+    H.cv1 = clamp(3 * H.u, 0, 100);
+    H.cv1Fb = relax(H.cv1Fb, H.cv1, dt, 6);
+    H.cv2 = H.cv1Fb >= 99 ? clamp(1.5 * (H.u - 100 / 3), 0, 100) : 0;
+    H.cv2Fb = relax(H.cv2Fb, H.cv2, dt, 6);
+    const qValves = STEAM_CAP * (H.cv1Fb / 300 + H.cv2Fb / 150);
+
+    // exchangers: HX-1 always lead; HX-2 comes in on sustained steam demand above 85 % of
+    // one exchanger and goes out once one exchanger carries the load at under 70 %
+    if (!hwEnable) { H.lagHx = false; hwCtl.hxInT = 0; hwCtl.hxOutT = 0; }
+    else if (!H.lagHx) {
+      hwCtl.hxInT = qValves > 0.85 * HX_CAP ? hwCtl.hxInT + dt : 0;
+      if (hwCtl.hxInT >= 300) { H.lagHx = true; hwCtl.hxInT = 0; hwCtl.hxOutT = 0; }
+    } else {
+      hwCtl.hxOutT = H.load < 0.7 * HX_CAP ? hwCtl.hxOutT + dt : 0;
+      if (hwCtl.hxOutT >= 600) { H.lagHx = false; hwCtl.hxOutT = 0; }
+    }
+    let nIn = 0;
+    for (let i = 0; i < 2; i++) {
+      const x = H.hx[i], want = hwEnable && (i === 0 || H.lagHx);
+      x.iso1 = relax(x.iso1, want ? 100 : 0, dt, 10);   // AO: the butterfly disc turns
+      x.iso2 = want ? 1 : 0;                            // BO
+      if (x.iso1 > 90 && x.iso2) nIn++;
+    }
+
+    // heat to the loop: what the steam valves pass, up to what the exchangers in service can move
+    const qHx = HX_CAP * nIn * clamp(flow / 0.3, 0, 1);
+    const qHw = Math.min(qValves, qHx);
+    H.load = qHw;
+    H.steam = (qHw * 1000) / 970;
+    H.hws = clamp(H.hws + ((qHw - hwLoad - (flowing ? loss : loss * 0.5)) / 250) * (dt / 60), 60, 200);
+    H.hwr = relax(H.hwr, flowing ? H.hws - clamp(3 + (25 * hwLoad) / 500, 2, 30) : H.hws - 1, dt, 60);
     P.hwLoad = hwLoad;
-    hwp.speed = relax(hwp.speed, hwp.on ? 30 + 70 * clamp(hwDemand / 400, 0, 1) : 0, dt, 20);
-    hwp.kw = 3.7 * Math.pow(hwp.speed / 100, 3);
-    hwFlowing = hwp.on && hwp.speed > 5;
-    reheatRise = hwFlowing ? 35 * clamp((B.hws - 85) / 70, 0, 1) : 0;
+
+    // bypass: opens at low demand to keep minimum flow through the exchangers
+    H.byp = hwEnable ? clamp(((0.4 - open) / 0.15) * 100, 0, 100) : 0;
+    H.bypFb = relax(H.bypFb, H.byp, dt, 6);
+    hwFlowing = flowing;
+    reheatRise = hwFlowing ? 35 * clamp((H.hws - 85) / 70, 0, 1) : 0;
 
     // ---- energy
     const fansKw = A[0].s.kw + A[1].s.kw + 11 * Math.pow(T.fan / 100, 3);
-    const pumpsKw = P.pumps['CHWP-1'].kw + P.pumps['CHWP-2'].kw + hwp.kw + cwp.kw;
+    const pumpsKw = P.pumps['CHWP-1'].kw + P.pumps['CHWP-2'].kw + P.pumps['HWP-1'].kw + P.pumps['HWP-2'].kw + cwp.kw;
     // plug + base load: IT closets, lifts, exhaust, exit lighting, receptacles
     // (≈ 20 kW overnight for ~62,000 ft², rising with the people in it)
     const plugKw = 20 + 48 * state.occupancy;
@@ -792,6 +928,17 @@ export function createSim({ seed = 7, startHour = 9.5 } = {}) {
       else if (alarmMap.has('chws-high')) raise('chws-high', 'medium', `CHW supply high · ${half(P.chws)} °F (SP ${P.chwsSp.toFixed(0)})`, C[leadIdx].id);
     }
     for (let i = 0; i < 2; i++) C[i].s.alarm = C[i].tripped ? 'Tripped · compressor fault' : null;
+    // HW supply low: armed after the mode-change hold and 30 min of plant run (the morning pull-up)
+    const hwText = () => `HW supply low · ${half(H.hws)} °F (SP ${P.hwsSp.toFixed(0)})`;
+    if (hwEnable && armedT && hwCtl.runT > 1800 && H.hws < P.hwsSp - 15) {
+      hwCtl.lowT += dt;
+      if (hwCtl.lowT >= 600 || alarmMap.has('hws-low')) raise('hws-low', 'medium', hwText(), 'HHW-1');
+    } else {
+      hwCtl.lowT = 0;
+      if (!hwEnable || H.hws > P.hwsSp - 10) drop('hws-low');
+      else if (alarmMap.has('hws-low')) raise('hws-low', 'medium', hwText(), 'HHW-1');
+    }
+    H.tempAlarm = alarmMap.has('hws-low');
   }
 
   // ---------- run flow intensity (0..1) for the 3D flow animation
@@ -808,6 +955,12 @@ export function createSim({ seed = 7, startHour = 9.5 } = {}) {
     return { id: r.id, type, ref };
   });
   const flowIdx = new Map(FLOW.map((f, i) => [f.id, i]));
+  // fastest proven HW pump
+  function hwPumpSpeed() {
+    let v = 0;
+    for (const id of HW_PUMPS) { const p = P.pumps[id]; if (p.on && p.speed > 5 && p.speed > v) v = p.speed; }
+    return v;
+  }
   function flowVal(f) {
     const r = f.ref;
     switch (f.type) {
@@ -819,7 +972,7 @@ export function createSim({ seed = 7, startHour = 9.5 } = {}) {
       case 6: return chwFlowing ? clamp(Math.max(P.pumps['CHWP-1'].speed, P.pumps['CHWP-2'].speed) / 100, 0, 1) : 0;
       case 7: return hwFlowing && r.reheat > 1 ? clamp(0.25 + (0.75 * r.reheat) / 100, 0, 1) : 0;
       case 8: return hwFlowing && r.on && r.hcv > 1 ? clamp(0.25 + (0.75 * r.hcv) / 100, 0, 1) : 0;
-      case 9: return hwFlowing ? clamp(P.pumps['HWP-1'].speed / 100, 0, 1) : 0;
+      case 9: return hwFlowing ? clamp(hwPumpSpeed() / 100, 0, 1) : 0;
       case 10: return r.status === 'running' && P.pumps['CWP-1'].on ? clamp(P.pumps['CWP-1'].speed / 100, 0, 1) : 0;
       default: return P.pumps['CWP-1'].on ? clamp(P.pumps['CWP-1'].speed / 100, 0, 1) : 0;
     }
@@ -1011,10 +1164,12 @@ export function createSim({ seed = 7, startHour = 9.5 } = {}) {
       row('Mixed air', f1(a.mat), '°F'),
       row('Return air', f1(a.rat), '°F'),
       row('Outside air damper', f0(a.oad), '%'),
+      row('Return / relief dampers', `${f0(a.rad)} / ${f0(a.ead)}`, '%'),
       row('Economizer', a.econ ? 'Active · free cooling' : !a.on ? 'Off' : state.oat >= 65 ? 'Locked out · OAT high' : 'Minimum OA'),
       row('CHW valve', f0(a.ccv), '%'),
       row('HW valve', f0(a.hcv), '%'),
       row('Duct static / SP', `${f2(a.ssp)} / ${f2(a.sspSp)}`, 'in.WC'),
+      row('Filter dP (pre / final)', `${f2(a.pfDp)} / ${f2(a.ffDp)}`, 'in.WC', a.pfDp > 1.5 || a.ffDp > 1.5 ? 'warn' : undefined),
       row('Airflow', commas(a.cfm), 'cfm'),
       row('Coil load', f1(a.coilTons), 'tons'),
       row('Fan power', f1(a.kw), 'kW'),
@@ -1030,6 +1185,7 @@ export function createSim({ seed = 7, startHour = 9.5 } = {}) {
 
   function describeChiller(e) {
     const c = P.chillers[e.id];
+    const pid = e.id === 'CH-1' ? 'CHWP-1' : 'CHWP-2', pmp = P.pumps[pid];
     const st = { running: 'Running', starting: 'Starting · 2 min delay', off: 'Off · standby', tripped: 'TRIPPED' }[c.status];
     const rows = [
       row('Status', st, '', c.status === 'tripped' ? 'alarm' : c.on ? 'ok' : undefined),
@@ -1037,37 +1193,67 @@ export function createSim({ seed = 7, startHour = 9.5 } = {}) {
       row('Cooling', f1(c.tons), 'tons'),
       row('CHW supply / SP', `${f1(c.chws)} / ${f1(P.chwsSp)}`, '°F', c.on && c.chws > P.chwsSp + 3 ? 'warn' : undefined),
       row('CHW return', f1(c.chwr), '°F'),
+      row('CHW pump', pmp.on ? `${pid} · ${f0(pmp.speed)}` : `${pid} · off`, pmp.on ? '%' : ''),
       row('Power', f1(c.kw), 'kW'),
       row('Efficiency', c.kwPerTon > 0 ? f2(c.kwPerTon) : '—', 'kW/ton'),
       row('Condenser water in', f1(P.tower.cws), '°F'),
+      row('Condenser water out', f1(c.cwl), '°F'),
       row('Staging', c.lead ? 'Lead' : 'Lag'),
     ];
     if (c.alarm) rows.push(row('Alarm', c.alarm, '', 'alarm'));
     return { id: e.id, kind: 'chiller', title: `${e.id} · Water-cooled chiller`, subtitle: `B1 · ${CH_CAP} ton centrifugal · ${c.lead ? 'lead' : 'lag'}`, status: c.status === 'tripped' ? 'alarm' : c.on ? 'ok' : 'off', rows };
   }
 
-  function describeBoiler(e) {
-    const b = P.boiler;
+  function describeHhw(e) {
+    const H = P.hhw;
+    const heating = H.enabled && H.load > 5;
+    const inService = H.hx.map((x, i) => (x.iso1 > 90 && x.iso2 ? `HX-${i + 1}` : null)).filter(Boolean);
+    const pumpText = HW_PUMPS.map((id) => {
+      const p = P.pumps[id], role = id === H.leadPump ? 'lead' : 'lag';
+      return p.on ? `${id} ${role} ${f0(p.speed)} %` : `${id} off`;
+    }).join(' · ');
     const rows = [
-      row('Status', b.on ? 'Firing' : P.pumps['HWP-1'].on ? 'Standby · cycling' : 'Off', '', b.on ? 'ok' : undefined),
-      row('Firing rate', f0(b.fire), '%'),
-      row('HW supply / SP', `${f1(b.hws)} / ${f1(P.hwsSp)}`, '°F', b.hws < P.hwsSp - 15 && P.pumps['HWP-1'].on ? 'warn' : undefined),
-      row('HW return', f1(b.hwr), '°F'),
-      row('Heat to loop', f0(b.load), 'MBH'),
+      row('Status', heating ? 'Heating' : H.enabled ? 'Enabled · idle' : 'Off', '', H.tempAlarm ? 'alarm' : H.enabled ? 'ok' : undefined),
+      row('HW supply / SP', `${f1(H.hws)} / ${f1(P.hwsSp)}`, '°F', H.enabled && H.hws < P.hwsSp - 15 ? 'warn' : undefined),
+      row('HW return', f1(H.hwr), '°F'),
+      row('Steam valves 1/3 · 2/3', `${f0(H.cv1Fb)} · ${f0(H.cv2Fb)}`, '%'),
+      row('Exchangers in service', inService.length ? inService.join(' + ') : 'None'),
+      row('Pumps', pumpText),
+      row('Loop dP / SP', `${f1(H.dp)} / ${f1(H.dpSp)}`, 'psi', H.enabled && H.dp < H.dpSp - 2 ? 'warn' : undefined),
+      row('Bypass valve', f0(H.bypFb), '%'),
+      row('Heat to loop', f0(H.load), 'MBH'),
+      row('Steam', commas(H.steam), 'lb/h'),
       row('OA reset', `${f0(state.oat)} °F OAT → ${f0(P.hwsSp)} °F HWS`),
     ];
-    return { id: e.id, kind: 'boiler', title: `${e.id} · Hot-water boiler`, subtitle: `B1 · ${commas(BOILER_CAP)} MBH condensing · VAV reheat + AHU coils`, status: b.on ? 'ok' : P.pumps['HWP-1'].on ? 'standby' : 'off', rows };
+    const al = alarmMap.get('hws-low');
+    if (al) rows.push(row('Alarm', al.text, '', 'alarm'));
+    return {
+      id: e.id, kind: 'hw plant', title: `${e.id} · Heating hot water plant`,
+      subtitle: 'B1 · steam to hot water · 2 shell-and-tube HXs · 1/3 + 2/3 steam valves',
+      status: H.tempAlarm ? 'alarm' : H.enabled ? 'ok' : 'off', rows,
+    };
   }
 
-  const PUMP_DUTY = { 'CHWP-1': 'Chilled water · with CH-1', 'CHWP-2': 'Chilled water · with CH-2', 'HWP-1': 'Heating hot water loop', 'CWP-1': 'Condenser water · tower ↔ chillers' };
+  const PUMP_DUTY = {
+    'CHWP-1': "Chilled water · on CH-1's pump skid", 'CHWP-2': "Chilled water · on CH-2's pump skid",
+    'HWP-1': 'Heating hot water · lead/lag on loop dP', 'HWP-2': 'Heating hot water · lead/lag on loop dP',
+    'CWP-1': 'Condenser water · tower ↔ chillers',
+  };
   function describePump(e) {
     const p = P.pumps[e.id];
+    const hw = HW_PUMPS.includes(e.id);
+    const H = P.hhw;
     const rows = [
-      row('Status', p.on ? 'Running' : 'Off', '', p.on ? 'ok' : undefined),
+      row('Status', p.on ? 'Running' : hw && H.enabled ? 'Off · standby' : 'Off', '', p.on ? 'ok' : undefined),
       row('VFD speed', f0(p.speed), '%'),
       row('Power', f1(p.kw), 'kW'),
-      row('Serves', e.serves.join(', ')),
     ];
+    if (hw) {
+      const lead = e.id === H.leadPump;
+      rows.push(row('Staging', lead ? 'Lead · alternates daily' : H.lagPump ? 'Lag · running on loop dP' : 'Lag · starts on loop dP'));
+      rows.push(row('Loop dP / SP', `${f1(H.dp)} / ${f1(H.dpSp)}`, 'psi'));
+    }
+    rows.push(row('Serves', e.serves.join(', ')));
     return { id: e.id, kind: 'pump', title: `${e.id} · Pump`, subtitle: `B1 · ${PUMP_DUTY[e.id]}`, status: p.on ? 'ok' : 'off', rows };
   }
 
@@ -1119,7 +1305,7 @@ export function createSim({ seed = 7, startHour = 9.5 } = {}) {
       row('Plant COP', state.cop > 0 ? f1(state.cop) : '—'),
       row('Occupancy', f0(state.occupancy * 100), '%'),
       row('CHW supply', f1(P.chws), '°F'),
-      row('HW supply', f1(P.boiler.hws), '°F'),
+      row('HW supply', f1(P.hhw.hws), '°F'),
       row('Active alarms', String(state.alarms.length), '', state.alarms.length ? 'alarm' : 'ok'),
     ];
     return { id: 'building', kind: 'building', title: 'Office tower · digital twin', subtitle: `Simulated building · ${state.timeLabel}`, status: state.alarms.length ? 'alarm' : 'ok', rows };
@@ -1139,7 +1325,7 @@ export function createSim({ seed = 7, startHour = 9.5 } = {}) {
     if (e) {
       if (e.kind === 'ahu') return describeAhu(e);
       if (e.kind === 'chiller') return describeChiller(e);
-      if (e.kind === 'boiler') return describeBoiler(e);
+      if (e.kind === 'hhw') return describeHhw(e);
       if (e.kind === 'pump') return describePump(e);
       return describeTower(e);
     }

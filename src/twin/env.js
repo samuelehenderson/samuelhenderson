@@ -19,7 +19,7 @@ import {
   SphereGeometry,
   Vector3,
 } from 'three';
-import { PALETTE, clamp, finite, lerp, smoothstep } from './shared.js';
+import { PALETTE, SHADOW_LAYER, clamp, finite, lerp, smoothstep } from './shared.js';
 
 const C = (hex) => new Color(hex);
 // The OutputPass tone-maps with Khronos PBR Neutral, whose toe subtracts the
@@ -243,6 +243,7 @@ export function createEnv({ scene, layout, quality }) {
   sc.bottom = -42;
   sc.near = 10;
   sc.far = 320;
+  sc.layers.enable(SHADOW_LAYER);   // the units' shadow-only casters
   sun.shadow.mapSize.set(2048, 2048);
   sun.shadow.bias = -0.0004;
   sun.shadow.normalBias = 0.04;

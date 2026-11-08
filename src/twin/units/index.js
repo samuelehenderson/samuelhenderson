@@ -20,7 +20,7 @@ import { Ahu3DView } from '../../clarityview/ahu/3d/ahu3d.js';
 import { Tower3DView, CentrifugalChiller3DView, Booster3DView, Hhw3DView, Vav3DView } from '../../clarityview/ahu/3d/equip3d.js';
 import { AirFlow } from '../../clarityview/ahu/3d/airflow3d.js';
 import { disposeDeviceCache } from '../../clarityview/ahu/3d/siemens3d.js';
-import { UNITS, WARM, WARM2, mapOf } from './catalog.js';
+import { UNITS, WARM, WARM2, WARM3, mapOf } from './catalog.js';
 import { createHost, levelMaterials, pickMaterial } from './host.js';
 import { bakeMaterials } from './freeze.js';
 import { buildVavGeometry } from './vav.js';
@@ -98,8 +98,8 @@ export function createUnits({ layout, levels, world, tier = 'high', reducedMotio
 
   /**
    * The first model built pays for compiling ClarityView's builders and for the
-   * Siemens device geometry it caches: two small air handlers (catalog WARM and
-   * WARM2, together the parts of AHU-1), built off-scene as two tasks, take that
+   * Siemens device geometry it caches: three small air handlers (catalog WARM,
+   * WARM2, WARM3, together the parts of AHU-1), built off-scene as three tasks, take that
    * cost out of AHU-1's embed so no one task carries all of it. Their geometry is
    * dropped; the device cache stays.
    */
@@ -120,6 +120,7 @@ export function createUnits({ layout, levels, world, tier = 'high', reducedMotio
       if (li !== undefined) {
         await step('warm', 'embed', () => warmUp(li, WARM), yieldFn);
         await step('warm2', 'embed', () => warmUp(li, WARM2), yieldFn);
+        await step('warm3', 'embed', () => warmUp(li, WARM3), yieldFn);
       }
     } catch (err) {
       if (dev) console.warn('[twin units]', 'warm-up', err);

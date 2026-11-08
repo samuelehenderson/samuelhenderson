@@ -66,9 +66,8 @@ const HHW_CONFIG = hhwConfig({ exchangers: 2, pumps: 2, valves: 'split', bypass:
  * Two small air handlers built off-scene before AHU-1 (units/index.js warmUp), each its own
  * task: together they take the one-time cost of ClarityView's builders (code warm-up) and of
  * the Siemens device geometry it caches out of AHU-1's task, so no single build step carries
- * it. WARM: damper, pre-filter, cooling coil and valve, one supply fan, SAT. WARM2 is the
- * rest of AHU-1: return module with its fans, mixing damper, final filter, heating coil and
- * valve, the other sensors and the air stations.
+ * it. WARM: damper, pre-filter, cooling coil and valve, one supply fan, SAT. WARM2 and WARM3
+ * are the rest of AHU-1 (below).
  */
 const oneFan = (c) => {
   const fan = c.supply.find((s) => s.device === 'fan');
@@ -88,13 +87,26 @@ export const WARM = (() => {
   c.airStations = [];
   return { id: '__warm', config: c };
 })();
+// WARM2 is split in two (at 4x CPU one build of the whole rest ran past the 140 ms step budget
+// on a loaded phone): WARM2 the return module with its fans and the mixing damper, WARM3 the
+// final filter, heating coil and valve, the other sensors and the air stations.
 export const WARM2 = (() => {
   const c = ahuConfig('left');
-  const keep = ['Mixing', 'Final Filter', 'Heating Coil', 'Discharge'];
+  const keep = ['Mixing', 'Discharge'];
   c.supply = c.supply.filter((s) => keep.includes(s.label) || s.device === 'fan');
   oneFan(c);
-  c.sensors = c.sensors.filter((s) => s.tag !== 'SAT');
+  c.sensors = [];
+  c.airStations = [];
   return { id: '__warm2', config: c };
+})();
+export const WARM3 = (() => {
+  const c = ahuConfig('left');
+  const keep = ['Final Filter', 'Heating Coil', 'Discharge'];
+  c.supply = c.supply.filter((s) => keep.includes(s.label) || s.device === 'fan');
+  oneFan(c);
+  delete c.return;
+  c.sensors = c.sensors.filter((s) => s.tag !== 'SAT');
+  return { id: '__warm3', config: c };
 })();
 
 /** The VAV terminal: ClarityView's 12" single-duct box with HW reheat on a DXR2. */

@@ -227,6 +227,8 @@ export function patchReveal(material, revealUniform) {
  * midday sun lit the basement plant and its white pipework bloomed into neon tubes.
  */
 const UNIT_PATCHED = new WeakMap();
+/** The layer only the sun's shadow camera renders: shadow-only casters (a unit's baked copy). */
+export const SHADOW_LAYER = 5;
 export const SUN_UP = { value: 1 };
 export const SUN_BELOW = { value: 0 };
 const DIR_INFO = 'getDirectionalLightInfo( directionalLight, directLight );';

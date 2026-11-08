@@ -38,7 +38,7 @@ import {
 } from 'three';
 import { accessFor } from './catalog.js';
 import { bakeIter, cluster, freezeIter, settle, eachInstance } from './freeze.js';
-import { patchUnitMaterial, unitPatchOf, SUN_BELOW, SUN_UP } from '../shared.js';
+import { patchUnitMaterial, unitPatchOf, SHADOW_LAYER, SUN_BELOW, SUN_UP } from '../shared.js';
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const damp = (a, b, rate, dt) => a + (b - a) * (1 - Math.exp(-rate * dt));
@@ -114,6 +114,7 @@ export function createHost(unit, ctx) {
     view: null,
     lod0: null,
     lod1: null,
+    shadow: null,     // the shadow-only caster (baked solid on SHADOW_LAYER)
     lod: -1,
     box: new Box3(),
     subs: [],
@@ -296,15 +297,32 @@ export function createHost(unit, ctx) {
     holder.traverse((o) => {
       if (o.isMesh || o.isLine) patch(o);
     });
-    // shadows: ClarityView's flags, except see-through parts (no solid black boxes from clear
-    // casings). The sun never reaches the basement plant room: nothing there casts at all.
+    // shadows: one shadow-only caster per unit, its baked solid on a layer only the sun's
+    // shadow camera renders, whichever LOD is on screen (the live model's ~40 casting parts
+    // cost ~40 draws on every shadow refresh). The baked solid leaves out see-through parts,
+    // as ClarityView's own flags did less one. The sun never reaches the basement plant room:
+    // nothing there casts at all.
     const below = level.kind === 'plant';
+    const solid = host.lod1?.children.find((c) => c.userData.baked === 'solid');
+    if (!below && solid) {
+      const sh = new Mesh(solid.geometry, solid.material);
+      sh.name = `shadow-${unit.id}`;
+      sh.layers.set(SHADOW_LAYER);
+      sh.castShadow = true;
+      sh.receiveShadow = false;
+      sh.position.copy(host.lod1.position);
+      sh.quaternion.copy(host.lod1.quaternion);
+      sh.scale.copy(host.lod1.scale);
+      host.lod1.parent.add(sh);
+      host.shadow = sh;
+    }
     holder.traverse((o) => {
-      if (!o.isMesh || !o.castShadow) return;
+      if (!o.isMesh || !o.castShadow || o === host.shadow) return;
       const m = Array.isArray(o.material) ? o.material[0] : o.material;
-      if (below || (m?.transparent && m.opacity < 0.6)) o.castShadow = false;
+      if (below || host.shadow || (m?.transparent && m.opacity < 0.6)) o.castShadow = false;
       else host.casters.push(o);
     });
+    if (host.shadow) host.casters.push(host.shadow);
     // the air handlers' air stream, made now (hidden) so its program compiles with the rest.
     // Only the AHUs draw one: the plant families' streams (white ribbons in the pump headers)
     // read as air and bloom; their water already moves in the service runs and the pumps turn
@@ -325,12 +343,14 @@ export function createHost(unit, ctx) {
     try {
       if (host.lod0) host.lod0.removeFromParent();
       if (host.lod1) host.lod1.removeFromParent();
+      if (host.shadow) host.shadow.removeFromParent();
     } catch {
       /* ignore */
     }
     host.view = null;
     host.lod0 = null;
     host.lod1 = null;
+    host.shadow = null;
     host.casters.length = 0;
     host.subs.length = 0;
     if (host.box.isEmpty()) {

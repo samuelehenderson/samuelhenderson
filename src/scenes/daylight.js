@@ -1,14 +1,16 @@
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { initMouseParallax } from '../lib/parallax.js';
+import { initContactWindow } from './contact-window.js';
 
 /**
- * Scene 6 — Contact / Daylight
+ * Scene 7 — Contact / the office at the end of the day
  *
- * The camera pulls back to the workshop, now lit by morning sun.
- * Sticky-stage vertical scroll with 5 parallax layers echoing the
- * Hero. The paper-note contact form and content grid ride above.
- * Mirror of Hero's setup, warm palette instead of dim monitor glow.
+ * The hero's office at blue hour, seen as a room you stand in: panelled
+ * walls running back to a window onto a snowy range, the monitor glowing
+ * on its desk on the right. Sticky stage with parallax layers (the view
+ * through the window drifts a little more than the wall); the copy and
+ * the blueprint note ride above. Art: tools/contact-room-art.mjs.
  */
 export function initDaylight({ reducedMotion }) {
   const scene = document.querySelector('[data-scene="contact"]');
@@ -20,6 +22,10 @@ export function initDaylight({ reducedMotion }) {
   const reveal  = scene.querySelectorAll(
     '.contact__number, .contact__heading, .contact__lead, .contact__actions, .contact__note'
   );
+
+  // The window's live view (falling snow, a few twinkling stars) — after
+  // first paint, and as one still frame under reduced motion.
+  initContactWindow(scene, { reducedMotion });
 
   // Wire the contact form to submit inline via fetch instead of a full
   // page redirect to the Web3Forms thank-you page. Visitor stays on

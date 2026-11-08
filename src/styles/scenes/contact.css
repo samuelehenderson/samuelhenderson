@@ -149,6 +149,15 @@
   width: 100%;
   height: 100%;
 }
+/* the live layer over the desk: code typing on the monitor, its chart drawing,
+   steam off the coffee (generated with its keyframes by tools/contact-room-art.mjs).
+   Its own compositing layer, so a frame of it never repaints the desk's art. */
+.cx-art > svg.cx-live {
+  pointer-events: none;
+  will-change: transform;
+}
+#contact.cx-paused .cx-live * { animation-play-state: paused !important; }
+
 /* falling snow over the glass (src/scenes/contact-window.js) */
 .cx-snow {
   position: absolute;
@@ -619,4 +628,8 @@
   .contact-layer, .contact-layer .layer-inner, .cx-view, .cx-view__drift { transform: none !important; }
   .contact__note { transform: none; }
   .cx-snow { transition: none; }
+  /* a still screen of code (the bottom line fully typed) and still wisps of steam */
+  .cx-live * { animation: none !important; }
+  .cx-code-type { display: none; }
+  .cx-steam__w { opacity: calc(var(--p) * 0.8); }
 }

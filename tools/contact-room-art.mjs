@@ -528,18 +528,11 @@ function desk() {
   const pad = bw * 0.027;
   const sx = mx0 + pad, sy = my1 + pad, sw = bw - 2 * pad, shh = bh - 2 * pad;
   s.push(`<rect x="${r1(sx)}" y="${r1(sy)}" width="${r1(sw)}" height="${r1(shh)}" rx="${r1(bw * 0.01)}" fill="url(#cdScreen)"/>`);
-  // the hero's code lines + chart, scaled into this screen (same monitor, end of the day)
-  const k = sw / 568;
-  const H = (x, yv) => [sx + (x - 516) * k, sy + (yv - 296) * k];
-  const lines = [[540, 320, 120, '#4ea8ff', 0.8], [540, 340, 220, '#7ec0ff', 0.45], [560, 360, 180, '#4ea8ff', 0.6], [560, 380, 240, '#7ec0ff', 0.38], [580, 400, 160, '#4ea8ff', 0.65], [540, 430, 200, '#7ec0ff', 0.42], [540, 450, 280, '#4ea8ff', 0.55], [560, 470, 140, '#7ec0ff', 0.45], [540, 500, 240, '#4ea8ff', 0.65], [560, 520, 180, '#7ec0ff', 0.38], [540, 550, 160, '#4ea8ff', 0.5], [560, 570, 220, '#7ec0ff', 0.35]];
-  s.push(`<g>${lines.map(([lx, ly, lw, c, o]) => { const [ax, ay] = H(lx, ly); return `<rect x="${r1(ax)}" y="${r1(ay)}" width="${r1(lw * k)}" height="${r1(8 * k)}" fill="${c}" opacity="${o}"/>`; }).join('')}</g>`);
-  const [cx0, cy0] = H(860, 320);
-  s.push(`<rect x="${r1(cx0)}" y="${r1(cy0)}" width="${r1(200 * k)}" height="${r1(180 * k)}" fill="#0a1426" stroke="#4ea8ff" stroke-opacity="0.4" stroke-width="1"/>`);
-  s.push(`<polyline points="${[[870, 470], [900, 440], [930, 450], [960, 400], [990, 420], [1020, 360], [1050, 380]].map(([a, b]) => pt(H(a, b))).join(' ')}" fill="none" stroke="#4ea8ff" stroke-width="${r1(2 * k * 1.2)}" opacity="0.85"/>`);
-  // a cursor blinking-still at the end of a line, and a faint screen sheen
-  const [cux, cuy] = H(724, 548);
-  s.push(`<rect x="${r1(cux)}" y="${r1(cuy)}" width="${r1(3 * k)}" height="${r1(12 * k)}" fill="#cfe6ff" opacity="0.8"/>`);
-  s.push(`<path d="${poly([[sx, sy], [sx + sw * 0.42, sy], [sx + sw * 0.2, sy + shh], [sx, sy + shh]])}" fill="#ffffff" opacity="0.025"/>`);
+  // the code, the chart and the screen's sheen are live: live() draws them in their own layer
+  // (.cx-live) so their animation never repaints the desk and its blurred shadows
+  const [cx0, cy0] = screenH()(860, 320);
+  const kk = screenH().k;
+  s.push(`<rect x="${r1(cx0)}" y="${r1(cy0)}" width="${r1(200 * kk)}" height="${r1(180 * kk)}" fill="#0a1426" stroke="#4ea8ff" stroke-opacity="0.4" stroke-width="1"/>`);
   s.push(`<rect x="${r1(mx0)}" y="${r1(my1)}" width="${r1(bw)}" height="1.4" fill="#7ec0ff" opacity="0.22"/>`);
   s.push('</g>');
 
@@ -568,9 +561,123 @@ function desk() {
   s.push(`<path d="M${r1(mcx2 + mw)} ${r1(mty + (mby - mty) * 0.22)}q${r1(mw * 0.8)} ${r1((mby - mty) * 0.08)} ${r1(mw * 0.8)} ${r1((mby - mty) * 0.32)}t${r1(-mw * 0.8)} ${r1((mby - mty) * 0.32)}" fill="none" stroke="#a7b3df" stroke-width="${r1(mw * 0.22)}"/>`);
   s.push(`<path d="M${r1(mcx2 - mw)} ${r1(mty)}V${r1(mby - mw * 0.14)}a${r1(mw)} ${r1(mw * 0.28)} 0 0 0 ${r1(2 * mw)} 0V${r1(mty)}Z" fill="url(#cdMug)"/>`);
   s.push(`<ellipse cx="${r1(mcx2)}" cy="${r1(mty)}" rx="${r1(mw)}" ry="${r1(mw * 0.28)}" fill="#e3e7f7"/><ellipse cx="${r1(mcx2)}" cy="${r1(mty + 0.8)}" rx="${r1(mw * 0.86)}" ry="${r1(mw * 0.22)}" fill="#2a1d18"/>`);
-  s.push(`<g fill="none" stroke="#dfe6ff" stroke-linecap="round"><path d="M${r1(mcx2 - mw * 0.3)} ${r1(mty - 6)}q${r1(-mw * 0.25)} -14 ${r1(mw * 0.06)} -26t${r1(-mw * 0.06)} -26" stroke-width="1.6" opacity="0.32"/><path d="M${r1(mcx2 + mw * 0.25)} ${r1(mty - 6)}q${r1(mw * 0.25)} -16 ${r1(-mw * 0.06)} -30t${r1(mw * 0.1)} -26" stroke-width="1.4" opacity="0.24"/></g>`);
+  // (the steam rising off it is live: live())
   s.push('</g>');
   return s.join('\n');
+}
+
+// the monitor's screen in art units, and the hero's code-panel coordinates mapped into it
+function screenH() {
+  const [mx0, my1] = P(MON.x0, MON.y1, MON.z), [mx1, my0] = P(MON.x1, MON.y0, MON.z);
+  const bw = mx1 - mx0, bh = my0 - my1, pad = bw * 0.027;
+  const sx = mx0 + pad, sy = my1 + pad, sw = bw - 2 * pad, shh = bh - 2 * pad;
+  const k = sw / 568;
+  const H = (x, yv) => [sx + (x - 516) * k, sy + (yv - 296) * k];
+  return Object.assign(H, { k, sx, sy, sw, shh });
+}
+// the mug's rim in art units (the same numbers desk() draws it with)
+function mugTop() {
+  const mz = 1.3, mxc = -0.05, mr = 0.045, mh = 0.1;
+  const [cx] = P(mxc, DESK.y, mz), [, ty] = P(mxc, DESK.y + mh, mz);
+  return { cx, ty, mw: (F * mr) / mz };
+}
+
+// ───────────────────────── LIVE: code typing on the monitor, the chart drawing, steam off the mug ─────────────────────────
+// Plain CSS animation (keyframes below, with the numbers this frame needs), in its own SVG layer;
+// contact.css pauses it while the section is off screen and stills it under reduced motion.
+function live() {
+  const H = screenH(), k = H.k;
+  const R = rng(11);
+  // ── the code: N lines that scroll up one line at a time (an editor gaining lines) while the newest
+  // line, at the bottom, types out from the left
+  const N = 18, LH = 22, TOP = 318, SLOTS = 12, STEP = 1.2;   // hero units / seconds per line
+  const COL = { kw: '#7ec0ff', id: '#cfe6ff', fn: '#4ea8ff', str: '#ffb547', com: '#5d6fb0' };
+  let ind = 0;
+  const code = [];
+  for (let i = 0; i < N; i++) {
+    const r = R();
+    if (r < 0.16 && ind > 0) ind--; else if (r > 0.78 && ind < 3) ind++;
+    const kind = R();
+    const segs = [];
+    if (kind < 0.12) segs.push([70 + R() * 130, COL.com, 0.6]);            // a comment
+    else if (kind > 0.18) {                                                  // (else a blank line)
+      segs.push([24 + R() * 34, COL.kw, 0.8]);
+      const m = 1 + Math.floor(R() * 2.6);
+      for (let j = 0; j < m; j++) { const q = R(); segs.push([26 + R() * 80, q < 0.22 ? COL.str : q < 0.6 ? COL.fn : COL.id, q < 0.22 ? 0.85 : 0.6]); }
+    }
+    code.push({ ind, segs });
+  }
+  const row = (line, slot) => {
+    let x = 540 + line.ind * 18;
+    const yv = TOP + slot * LH;
+    return line.segs.map(([w, c, o]) => {
+      w = Math.min(w, 838 - x);
+      if (w < 6) return '';
+      const [ax, ay] = H(x, yv);
+      x += w + 8;
+      return `<rect x="${r1(ax)}" y="${r1(ay)}" width="${r1(w * k)}" height="${r1(8 * k)}" rx="${r1(1.5 * k)}" fill="${c}" opacity="${o}"/>`;
+    }).join('');
+  };
+  const rows = [...code, ...code].map((l, i) => row(l, i)).join('');
+  const [clx, cly] = H(530, 310), [crx, cry] = H(846, TOP + SLOTS * LH - 4);
+  // the cover over the bottom slot: the screen's own colour there, so the line reveals as it types
+  const slotY = TOP + (SLOTS - 1) * LH;
+  const [tlx, tly] = H(534, slotY - 4), [trx, try_] = H(846, slotY + 12);
+  const f = (tly - H.sy) / H.shh;
+  const mix = (a, b) => Math.round(a + (b - a) * f);
+  const cover = `rgb(${mix(0x0d, 0x05)},${mix(0x1c, 0x0f)},${mix(0x33, 0x20)})`;
+  // ── the chart draws itself, holds, fades and draws again
+  const chart = [[870, 470], [900, 440], [930, 450], [960, 400], [990, 420], [1020, 360], [1050, 380]].map(([a, b]) => H(a, b));
+  let clen = 0;
+  for (let i = 1; i < chart.length; i++) clen += Math.hypot(chart[i][0] - chart[i - 1][0], chart[i][1] - chart[i - 1][1]);
+  clen = Math.ceil(clen) + 2;
+  // ── steam: soft wisps rising off the coffee. Each is one continuous, blurred S-curve that is born
+  // low and narrow at the surface, lifts, widens and curls as it climbs, then thins out; five of them
+  // on staggered clocks so the steam never stops or pulses in step.
+  const { cx, ty, mw } = mugTop();
+  const SH = 104;  // how high the steam reaches, art units
+  const wisp = (dx, a, h) => {
+    const x0 = cx + dx * mw, y0 = ty + 1;
+    return `M${r1(x0)} ${r1(y0)}C${r1(x0 + a * 0.3)} ${r1(y0 - h * 0.2)} ${r1(x0 - a * 0.8)} ${r1(y0 - h * 0.34)} ${r1(x0 - a * 0.2)} ${r1(y0 - h * 0.52)}S${r1(x0 + a * 1.3)} ${r1(y0 - h * 0.8)} ${r1(x0 + a * 0.5)} ${r1(y0 - h)}`;
+  };
+  // [offset across the mug (x mug width), curl (art units), length, stroke, peak opacity, seconds, delay]
+  const wisps = [
+    [-0.30, 5.5, 62, 5.2, 0.5, 4.2, 0],
+    [0.05, -6.5, 70, 6.0, 0.46, 4.8, -1.7],
+    [0.32, 5, 56, 4.4, 0.42, 3.9, -3.0],
+    [-0.08, 7, 66, 4.8, 0.38, 5.4, -4.1],
+    [0.18, -4.5, 50, 3.6, 0.34, 3.6, -0.9],
+  ];
+  const sm = [cx - mw * 3.2, ty - SH - 6, mw * 6.4, SH + 10];
+  const css = `
+.cx-code{animation:cx-code ${r1(N * STEP)}s steps(${N},end) infinite}
+@keyframes cx-code{to{transform:translateY(${r1(-N * LH * k)}px)}}
+.cx-code-type{transform-box:fill-box;transform-origin:100% 50%;animation:cx-type ${STEP}s linear infinite}
+@keyframes cx-type{0%{transform:scaleX(1)}62%,100%{transform:scaleX(0)}}
+.cx-chart{stroke-dasharray:${clen};animation:cx-chart 7s ease-in-out infinite}
+@keyframes cx-chart{0%{stroke-dashoffset:${clen};opacity:.85}62%{stroke-dashoffset:0}90%{opacity:.85;stroke-dashoffset:0}100%{opacity:0;stroke-dashoffset:0}}
+.cx-steam__w{opacity:0;transform-box:fill-box;transform-origin:50% 100%;animation:cx-steam var(--d) cubic-bezier(.3,.1,.5,1) infinite var(--o)}
+@keyframes cx-steam{0%{opacity:0;transform:translate(0,8px) scale(.55,.5) skewX(0deg)}14%{opacity:var(--p)}55%{opacity:calc(var(--p) * .7);transform:translate(-1px,-14px) scale(1,1) skewX(-7deg)}100%{opacity:0;transform:translate(2px,-36px) scale(1.55,1.2) skewX(6deg)}}`;
+  return [
+    `<style>${css}\n</style>`,
+    `<defs>
+<clipPath id="clCode"><rect x="${r1(clx)}" y="${r1(cly)}" width="${r1(crx - clx)}" height="${r1(cry - cly)}"/></clipPath>
+<linearGradient id="clSteamFade" x1="0" x2="0" y1="1" y2="0"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset="0.07" stop-color="#fff" stop-opacity="0.9"/><stop offset="0.45" stop-color="#fff" stop-opacity="0.6"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+<mask id="clSteamMask" maskUnits="userSpaceOnUse" x="${r1(sm[0])}" y="${r1(sm[1])}" width="${r1(sm[2])}" height="${r1(sm[3])}"><rect x="${r1(sm[0])}" y="${r1(sm[1])}" width="${r1(sm[2])}" height="${r1(sm[3])}" fill="url(#clSteamFade)"/></mask>
+<filter id="clSteamBlur" x="-80%" y="-20%" width="260%" height="140%"><feGaussianBlur stdDeviation="2.2"/></filter>
+</defs>`,
+    // the screen: code (clipped to the editor pane), the typing cover, the chart, the glass sheen
+    `<g class="cx-live-screen">`,
+    `<g clip-path="url(#clCode)"><g class="cx-code">${rows}</g></g>`,
+    `<rect class="cx-code-type" x="${r1(tlx)}" y="${r1(tly)}" width="${r1(trx - tlx)}" height="${r1(try_ - tly)}" fill="${cover}"/>`,
+    `<polyline class="cx-chart" points="${chart.map(pt).join(' ')}" fill="none" stroke="#4ea8ff" stroke-width="${r1(2 * k * 1.2)}" stroke-linejoin="round" opacity="0.85"/>`,
+    `<path d="${poly([[H.sx, H.sy], [H.sx + H.sw * 0.42, H.sy], [H.sx + H.sw * 0.2, H.sy + H.shh], [H.sx, H.sy + H.shh]])}" fill="#ffffff" opacity="0.025"/>`,
+    `</g>`,
+    // the steam (a prop: hidden with the mug on tablet and phone)
+    `<g class="cx-props cx-steam" mask="url(#clSteamMask)"><g filter="url(#clSteamBlur)" fill="none" stroke="#e4ebff" stroke-linecap="round">`,
+    wisps.map(([dx, a, h, w, op, d, o]) => `<path class="cx-steam__w" style="--p:${op};--d:${d}s;--o:${o}s" d="${wisp(dx, a, h)}" stroke-width="${w}"/>`).join(''),
+    `</g></g>`,
+  ].join('\n');
 }
 
 // ───────────────────────── a few motes in the monitor's light (foreground) ─────────────────────────
@@ -618,6 +725,9 @@ ${ind(20, room())}
                 <div class="cx-art">
                   <svg class="cx-desk" ${ART}>
 ${ind(20, desk())}
+                  </svg>
+                  <svg class="cx-live" ${ART}>
+${ind(20, live())}
                   </svg>
                 </div>
               </div>

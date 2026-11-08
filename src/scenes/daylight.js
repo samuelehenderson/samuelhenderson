@@ -27,6 +27,15 @@ export function initDaylight({ reducedMotion }) {
   // first paint, and as one still frame under reduced motion.
   initContactWindow(scene, { reducedMotion });
 
+  // The monitor's code, its chart and the coffee's steam (.cx-live, plain CSS
+  // animation) only run while the room is on screen.
+  if ('IntersectionObserver' in window) {
+    scene.classList.add('cx-paused');
+    new IntersectionObserver(([entry]) => {
+      scene.classList.toggle('cx-paused', !entry.isIntersecting);
+    }, { rootMargin: '120px 0px' }).observe(scene);
+  }
+
   // Wire the contact form to submit inline via fetch instead of a full
   // page redirect to the Web3Forms thank-you page. Visitor stays on
   // the site and gets a clean "note received" confirmation.

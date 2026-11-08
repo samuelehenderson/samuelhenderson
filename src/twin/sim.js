@@ -788,19 +788,23 @@ export function createSim({ seed = 7, startHour = 9.5 } = {}) {
     H.enabled = hwEnable;
     hwCtl.runT = hwEnable ? hwCtl.runT + dt : 0;
 
-    // pumps: lead / lag VFD pumps on loop dP; the lead alternates daily (HWP-1 on even days)
-    const leadId = day % 2 === 0 ? 'HWP-1' : 'HWP-2';
+    // pumps: lead / lag VFD pumps on loop dP; the lead alternates daily (HWP-1 on even days,
+    // counted straight through the week so Friday's lead hands over on Monday too)
+    const leadId = ((dAbs % 2) + 2) % 2 === 0 ? 'HWP-1' : 'HWP-2';
     const lagId = leadId === 'HWP-1' ? 'HWP-2' : 'HWP-1';
     const leadP = P.pumps[leadId], lagP = P.pumps[lagId];
     H.leadPump = leadId;
     const open = 0.25 + 0.75 * clamp(hwDemand / 400, 0, 1);   // how open the loop's valves are
     const fReq = Math.sqrt((H.dpSp * open) / 14);              // flow that holds the dP setpoint
+    // The lag pump starts on the lead above 92 % for 5 min, or 30 s after HX-2 is put in service
+    // (two exchangers need two pumps' minimum flow); it stops once HX-2 is out and both pumps
+    // have sat under 45 % for 10 min.
     if (!hwEnable) { H.lagPump = false; hwCtl.lagT = 0; hwCtl.lagOffT = 0; }
     else if (!H.lagPump) {
-      hwCtl.lagT = leadP.speed > 92 ? hwCtl.lagT + dt : 0;
-      if (hwCtl.lagT >= 300) { H.lagPump = true; hwCtl.lagT = 0; hwCtl.lagOffT = 0; }
+      hwCtl.lagT = leadP.speed > 92 || H.lagHx ? hwCtl.lagT + dt : 0;
+      if (hwCtl.lagT >= (H.lagHx ? 30 : 300)) { H.lagPump = true; hwCtl.lagT = 0; hwCtl.lagOffT = 0; }
     } else {
-      hwCtl.lagOffT = leadP.speed < 45 && lagP.speed < 45 ? hwCtl.lagOffT + dt : 0;
+      hwCtl.lagOffT = !H.lagHx && leadP.speed < 45 && lagP.speed < 45 ? hwCtl.lagOffT + dt : 0;
       if (hwCtl.lagOffT >= 600) { H.lagPump = false; hwCtl.lagOffT = 0; }
     }
     leadP.on = hwEnable;
@@ -1057,20 +1061,30 @@ export function createSim({ seed = 7, startHour = 9.5 } = {}) {
   }
 
   // ---------- time control
-  function setHour(h) {
+  function setHour(h, { quick = false } = {}) {
     let hh = fin(Number(h), state.hour);
     hh = ((hh % 24) + 24) % 24;
     const target = Math.floor(clk / 24) * 24 + hh;
-    clk = target - 0.5;
+    // A jump into the early morning replays the night from 23:00 at real pace, so the building has
+    // cooled down and the morning warm-up (HX-2 and the lag pump staging in) plays out as it would;
+    // any other jump (and every frame of a slider drag, { quick: true }) settles for 30 min, quickened.
+    const early = !quick && hh >= 3 && hh < 7.5;
+    const pre = early ? hh + 1 : 0.5;
+    clk = target - pre;
     curDayAbs = Math.floor(clk / 24);
     const hs = clk - curDayAbs * 24, hi = Math.min(23, Math.floor(hs));
     let e = 0;
     for (let i = 0; i < hi; i++) e += kwHist[i];
     kwh = e + (hs - hi) * kwHist[hi];
-    alarmHoldUntil = Math.max(alarmHoldUntil, t + 1800 + ALARM_HOLD);
-    relaxBoost = 3;
-    for (let i = 0; i < 60; i++) sub(30);
-    relaxBoost = 1;
+    alarmHoldUntil = Math.max(alarmHoldUntil, t + pre * 3600 + ALARM_HOLD);
+    if (early) {
+      const n = Math.ceil(pre * 60);
+      for (let i = 0; i < n; i++) sub((pre * 3600) / n);
+    } else {
+      relaxBoost = 3;
+      for (let i = 0; i < 60; i++) sub(30);
+      relaxBoost = 1;
+    }
     clk = target;
     const d = Math.floor(clk / 24);
     if (d !== curDayAbs) { curDayAbs = d; kwh = 0; }

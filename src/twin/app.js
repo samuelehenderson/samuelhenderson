@@ -526,9 +526,14 @@ export async function mountTwin({ stage, canvasHost, hud, sim, reducedMotion = f
     }
   }
   on('mode', setMode);
+  // the slider's right end is the end of today, not midnight of the same day. While dragging, each
+  // frame settles quickly; letting go on an early-morning hour replays the night (sim.setHour)
   on('time', (h) => {
     const v = finite(+h, NaN);
-    // the slider's right end is the end of today, not midnight of the same day
+    if (Number.isFinite(v)) sim.setHour(clamp(v, 0, 23.99), { quick: true });
+  });
+  on('timeset', (h) => {
+    const v = finite(+h, NaN);
     if (Number.isFinite(v)) sim.setHour(clamp(v, 0, 23.99));
   });
   on('play', (b) => {

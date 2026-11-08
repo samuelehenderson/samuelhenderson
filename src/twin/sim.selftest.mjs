@@ -398,9 +398,16 @@ section('AHU dampers, filters, fan fault; chiller condenser water out');
   });
   ok(bad.length === 0, `return damper = 100 − OA; relief shut at minimum OA; filter dP ∝ (cfm/design)² (${bad.slice(0, 3)})`);
   // the morning economizer opens the relief dampers (OA above the 20 % minimum)
-  const m = createSim({ seed: 7, startHour: 7.5 });
-  const ead = Math.max(m.state.ahus['AHU-1'].ead, m.state.ahus['AHU-2'].ead);
-  ok(m.state.ahus['AHU-1'].econ || m.state.ahus['AHU-2'].econ ? ead > 0 : true, `relief opens with the economizer (ead ${ead.toFixed(0)} %)`);
+  const m = createSim({ seed: 7, startHour: 5.9 });
+  let econSeen = 0, econShut = 0, eadMax = 0;
+  run(m, 2 * 3600, { speed: 60, dt: 0.5, each: (st) => {
+    for (const a of Object.values(st.ahus)) {
+      if (!a.econ || a.oad <= 25) continue;
+      econSeen++; eadMax = Math.max(eadMax, a.ead);
+      if (!(a.ead > 0)) econShut++;
+    }
+  } });
+  ok(econSeen > 0 && econShut === 0, `relief opens with the economizer (${econSeen} economizer samples above min OA, ${econShut} with relief shut, max ${eadMax.toFixed(0)} %)`);
   const a1 = sim.state.ahus['AHU-1'];
   ok(a1.pfDp > 0.05 && a1.ffDp > a1.pfDp && a1.ffDp < 1.5, `filter dP plausible at noon (${a1.pfDp.toFixed(2)} / ${a1.ffDp.toFixed(2)} in.WC)`);
   ok(!a1.sfFault && !sim.state.ahus['AHU-2'].sfFault, 'no fan fault without the fault');
@@ -493,6 +500,24 @@ section('HHW plant sequences');
   const lead2 = d.state.plant.hhw.leadPump, p2 = proven(d.state.plant, lead2);
   ok(d.state.timeLabel.startsWith('Wed 09:'), `(d) a day on (${d.state.timeLabel})`);
   ok(lead1 === 'HWP-2' && lead2 === 'HWP-1' && p1 && p2, `lead pump Tue ${lead1} → Wed ${lead2}, each proven`);
+  // the lead keeps alternating across the weekend: Fri and the Monday after lead on different pumps
+  const wk = createSim({ seed: 7, startHour: 9.5 });
+  const leads = {};
+  run(wk, 7 * 24 * 3600, { speed: 3600, dt: 0.5, each: (st) => { if (st.plant.hhw.enabled && st.hour > 10 && st.hour < 11) leads[st.timeLabel.slice(0, 3)] = st.plant.hhw.leadPump; } });
+  ok(leads.Fri && leads.Mon && leads.Fri !== leads.Mon && leads.Thu !== leads.Fri, `lead alternates across the weekend (${JSON.stringify(leads)})`);
+  // the lag pump stages in with HX-2 (two exchangers need two pumps' flow), and a visitor who drags
+  // the slider to 05:30 and lets go sees the morning warm-up stage HX-2 and both pumps in
+  let hxNoLag = 0;
+  const v = createSim({ seed: 7, startHour: 9.5 });
+  v.setHour(5.5);
+  let both = 0, hx2 = 0;
+  run(v, 3 * 3600, { speed: 60, dt: 0.1, each: (st) => {
+    const H = st.plant.hhw;
+    if (H.lagHx) { hx2++; if (!st.plant.pumps[H.leadPump === 'HWP-1' ? 'HWP-2' : 'HWP-1'].on) hxNoLag++; }
+    if (proven(st.plant, 'HWP-1') && proven(st.plant, 'HWP-2')) both++;
+  } });
+  ok(hx2 > 0 && both > 0, `slider to 05:30: HX-2 stages in (${(hx2 * 6 / 60).toFixed(0)} min) and both HW pumps run (${(both * 6 / 60).toFixed(0)} min)`);
+  ok(hxNoLag <= 6, `the lag pump follows HX-2 into service within 30 s (${hxNoLag * 6} s with HX-2 in and the lag pump off)`);
 
   // (e) a normal day raises no HWS-low alarm (weekday and the Saturday after a cold start)
   for (const [seed, h, hours] of [[7, 0.1, 24], [3, 0.1, 24], [7, 5.5, 72]]) {
@@ -505,11 +530,19 @@ section('HHW plant sequences');
   // more than 15 °F low for over 10 min, alarms on HHW-1, and clears once HWS recovers
   const lo = createSim({ seed: 7, startHour: 10 });
   lo.state.plant.hhw.hws = lo.state.plant.hwsSp - 60;
-  let raisedAt = null, k2 = 0;
-  run(lo, 20 * 60, { speed: 60, dt: 0.1, each: (st) => { k2++; if (raisedAt === null && st.alarms.some((a) => a.id === 'hws-low' && a.target === 'HHW-1')) raisedAt = k2 * 6; } });
+  let raisedAt = null, k2 = 0, atRaise = null;
+  run(lo, 20 * 60, { speed: 60, dt: 0.1, each: (st) => {
+    k2++;
+    const al = st.alarms.find((a) => a.id === 'hws-low' && a.target === 'HHW-1');
+    if (raisedAt === null && al) {
+      raisedAt = k2 * 6;
+      const card = lo.describe('HHW-1');
+      atRaise = { text: al.text, status: card.status, alarmRow: card.rows.some((r) => /alarm/i.test(r[0])), flag: st.plant.hhw.tempAlarm };
+    }
+  } });
   ok(raisedAt !== null && raisedAt >= 600, `hws-low raised on HHW-1 after the 10 min debounce (${raisedAt} s)`);
-  ok(raisedAt === null || /^HW supply low · \d+\.\d °F \(SP \d+\)$/.test(lo.state.alarms.find((a) => a.id === 'hws-low')?.text || 'HW supply low · 0.0 °F (SP 0)'), 'hws-low text');
-  ok(lo.describe('HHW-1').status === 'alarm' || !lo.state.plant.hhw.tempAlarm, 'HHW-1 card in alarm while hws-low is up');
+  ok(!!atRaise && /^HW supply low · \d+\.\d °F \(SP \d+\)$/.test(atRaise.text), `hws-low text (${atRaise && atRaise.text})`);
+  ok(!!atRaise && atRaise.flag && atRaise.status === 'alarm' && atRaise.alarmRow, `HHW-1 card in alarm with an Alarm row while hws-low is up (${atRaise && JSON.stringify(atRaise)})`);
   run(lo, 40 * 60, { speed: 60, dt: 0.1 });
   ok(!lo.state.alarms.some((a) => a.id === 'hws-low') && !lo.state.plant.hhw.tempAlarm, `hws-low clears once HWS recovers (${lo.state.plant.hhw.hws.toFixed(1)} / ${lo.state.plant.hwsSp.toFixed(1)})`);
 }
@@ -625,9 +658,13 @@ section('performance');
   }
   const sim = createSim();
   let t0 = now();
-  for (let h = 0; h < 24; h += 0.25) sim.setHour(h);
+  for (let h = 0; h < 24; h += 0.25) sim.setHour(h, { quick: true });
   const sh = (now() - t0) / 96;
-  ok(sh < 5, `setHour() cheap enough to scrub (${sh.toFixed(3)} ms)`);
+  ok(sh < 5, `setHour(h, { quick }) cheap enough to scrub (${sh.toFixed(3)} ms)`);
+  t0 = now();
+  for (const h of [3, 4.5, 5.5, 6.5, 7.25]) sim.setHour(h);
+  const shFull = (now() - t0) / 5;
+  ok(shFull < 150, `letting go on an early hour replays the night quickly enough (${shFull.toFixed(1)} ms)`);
   t0 = now();
   for (let i = 0; i < 5; i++) createSim({ seed: i });
   const cs = (now() - t0) / 5;

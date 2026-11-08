@@ -36,6 +36,9 @@ const CSS = `
 
 // Tags that sit close together on screen are split: this one reads to the left of its point.
 const FLIP = new Set(['CH-2']);
+// Tags moved along x from the unit's centre: AHU-1's sits over its west (discharge) end, clear of
+// the real-size cooling tower that stands between its east half and the hero camera.
+const TAG_DX = { 'AHU-1': -5 };
 
 export function createLabels({ host, layout, levels, coarsePointer }) {
   if (!document.getElementById(STYLE_ID)) {
@@ -153,7 +156,7 @@ export function createLabels({ host, layout, levels, coarsePointer }) {
           if (t.below && mode !== 'exploded') want *= 0.85;
           // basement tags anchor mid-height (the leader hangs below); the rest float over the top
           const ay = t.below ? t.eq.y + t.eq.h * 0.55 : t.eq.y + t.eq.h + 0.6;
-          v.set(t.eq.x, ay + world.levelShift(t.li), t.eq.z);
+          v.set(t.eq.x + (TAG_DX[t.id] || 0), ay + world.levelShift(t.li), t.eq.z);
         } else {
           want = live * mix.explode * (compact ? 0.85 : 1);
           const L = t.L;

@@ -17,6 +17,7 @@ import {
   RGBAFormat,
   RepeatWrapping,
   SRGBColorSpace,
+  ShaderChunk,
 } from 'three';
 
 export const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -220,12 +221,22 @@ export function patchReveal(material, revealUniform) {
  * lights. The program key keeps the material's own key (or its original
  * onBeforeCompile source) so two different original shaders never share a
  * program. Idempotent per material; returns the patch record.
+ *
+ * uSunK scales the directional lights (sun, moon) on the unit: 0 in the B1 plant room, which
+ * no sunlight reaches. three lights with no occlusion, and B1 units receive no shadows, so the
+ * midday sun lit the basement plant and its white pipework bloomed into neon tubes.
  */
 const UNIT_PATCHED = new WeakMap();
+export const SUN_UP = { value: 1 };
+export const SUN_BELOW = { value: 0 };
+const DIR_INFO = 'getDirectionalLightInfo( directionalLight, directLight );';
+const LIGHTS_BEGIN = ShaderChunk.lights_fragment_begin.includes(DIR_INFO)
+  ? ShaderChunk.lights_fragment_begin.replace(DIR_INFO, `${DIR_INFO}\n\t\tdirectLight.color *= uSunK;`)
+  : null;
 export function unitPatchOf(material) {
   return UNIT_PATCHED.get(material) || null;
 }
-export function patchUnitMaterial(material, { reveal, levelY, glow, level = 0, orig = null }) {
+export function patchUnitMaterial(material, { reveal, levelY, glow, level = 0, orig = null, sun = SUN_UP }) {
   const had = UNIT_PATCHED.get(material);
   if (had) return had;
   // capture the original before patching (a clone for another level passes the first one's)
@@ -236,6 +247,7 @@ export function patchUnitMaterial(material, { reveal, levelY, glow, level = 0, o
     shader.uniforms.uReveal = reveal;
     shader.uniforms.uLevelY = levelY;
     shader.uniforms.uUnitGlow = glow;
+    shader.uniforms.uSunK = sun;
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vBuildP;\nuniform float uLevelY;')
       .replace(
@@ -250,6 +262,9 @@ export function patchUnitMaterial(material, { reveal, levelY, glow, level = 0, o
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>\nvarying vec3 vBuildP;\nuniform float uReveal;\nuniform float uUnitGlow;\n${GLSL_NOISE}`)
       .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>\n${GLSL_DISSOLVE}`);
+    if (LIGHTS_BEGIN && shader.fragmentShader.includes('#include <lights_fragment_begin>')) {
+      shader.fragmentShader = `uniform float uSunK;\n${shader.fragmentShader.replace('#include <lights_fragment_begin>', LIGHTS_BEGIN)}`;
+    }
     if (shader.fragmentShader.includes('#include <emissivemap_fragment>')) {
       shader.fragmentShader = shader.fragmentShader.replace(
         '#include <emissivemap_fragment>',

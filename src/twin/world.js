@@ -449,13 +449,16 @@ export function createWorld({ layout, levels, quality, modeU, ctxU }) {
         vline(x, z, 0, top);
       buildPlantExtras(g, mats, hx, hz, own, ls);
       // plant-room lighting (the sun never reaches B1)
-      for (const [x, z] of [
-        [-12, 2],
-        [12, -4],
+      // Two gentle lamps between the pads, not over them: one right over HHW-1 turned its white
+      // steam header into a neon tube under bloom, and one beside CWP-1 did the same to its
+      // insulated headers. The east lamp hangs over the aisle in front of the chillers' ends.
+      for (const [x, z, power] of [
+        [-6.5, -2.5, 24],
+        [8.2, -6.1, 30],
       ]) {
         // parented to the root (always visible): a light that appears or disappears
         // with its level would change the light count and recompile every material
-        const pl = new PointLight(0xcfe3ff, 45, 24, 1.5);
+        const pl = new PointLight(0xcfe3ff, power, 24, 1.5);
         pl.position.set(x, L.y + top - 0.6, z);
         pl.userData.localY = top - 0.6;
         root.add(pl);
@@ -1029,8 +1032,9 @@ function buildPlantExtras(g, mats, hx, hz, own, ls) {
   for (let i = 0; i < 8; i++) pl.push(new BoxGeometry(0.02, 0.05, 0.05).translate(-hx + 0.49, 1.95 - i * 0.09, -2.9));
   g.add(new Mesh(own(mergeGeometries(pl)), ledMat));
   pl.forEach((p) => p.dispose());
-  // expansion tank + air separator by the heating hot water plant
-  const tank = new Mesh(own(new CapsuleGeometry(0.45, 0.9, 4, 14).translate(-8.6, 0.9, 9.5)), tankMat);
+  // expansion tank + air separator by the heating hot water plant, west of its pad (east of it,
+  // the tank stood in the line of sight to the HW pumps from the Inspect angle)
+  const tank = new Mesh(own(new CapsuleGeometry(0.45, 0.9, 4, 14).translate(-17.5, 0.9, 7.5)), tankMat);
   tank.castShadow = true;
   ls.casters.push(tank);
   g.add(tank);

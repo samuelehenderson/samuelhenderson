@@ -38,7 +38,7 @@ import {
 } from 'three';
 import { accessFor } from './catalog.js';
 import { bakeIter, cluster, freezeIter, settle, eachInstance } from './freeze.js';
-import { patchUnitMaterial, unitPatchOf } from '../shared.js';
+import { patchUnitMaterial, unitPatchOf, SUN_BELOW, SUN_UP } from '../shared.js';
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const damp = (a, b, rate, dt) => a + (b - a) * (1 - Math.exp(-rate * dt));
@@ -78,6 +78,28 @@ function meshBox(root, frame, { all = false } = {}) {
   if (all) root.traverse(visit);
   else root.traverseVisible(visit);
   return box;
+}
+
+/**
+ * Status bands (fan, pump, compressor, tower-fan rings) on a dark base. ClarityView gives them a
+ * bright base colour (#3fe08a / #46d3e6) that the scene's light lifts, so a tripped chiller's disc
+ * read green and a failed fan's bands white over their red fault glow, and the bake copied that
+ * colour to every distant unit. Dark (#1d2a30, ClarityView's own HHW pump band), a band reads only
+ * by its emissive: red on a fault, green / cyan while running, dark when off.
+ */
+const BAND_BASE = '#1d2a30';
+function darkBands(parts) {
+  const seen = new Set();
+  const one = (p) => {
+    const m = p?.band?.material;
+    if (!m || seen.has(m) || !m.color) return;
+    seen.add(m);
+    m.color.set(BAND_BASE);
+  };
+  for (const v of Object.values(parts || {})) {
+    if (Array.isArray(v)) v.forEach(one);
+    else if (v && typeof v === 'object') for (const w of Object.values(v)) if (Array.isArray(w)) w.forEach(one);
+  }
 }
 
 export function createHost(unit, ctx) {
@@ -135,6 +157,7 @@ export function createHost(unit, ctx) {
     if (unit.cls === 'ahu') Object.assign(opts, { rhAfterFans: unit.rhAfterFans !== false, eyebrow: 'Air handling unit' });
     const view = new Cls(opts);
     view.embed(seat, `${unit.id}.`, access.has, access.resolve, shared.mats);
+    darkBands(view.parts);
     view.showAir = false;
     view.reduced = !!ctx.reducedMotion;
     view.airGain = 0.45;
@@ -249,19 +272,20 @@ export function createHost(unit, ctx) {
     // dissolve + bloom gain on every material (LOD0, LOD1, curb); materials another
     // level already patched are cloned for this level unless the view animates them
     const clones = new Map();
+    const sun = level.kind === 'plant' ? SUN_BELOW : SUN_UP;   // no sunlight in the basement
     const patch = (o) => {
       const one = (m) => {
         if (!m || m.isShaderMaterial) return m;
         const rec = unitPatchOf(m);
         if (!rec) {
-          patchUnitMaterial(m, { reveal: shared.reveal, levelY: shared.levelY, glow: shared.glow, level: li });
+          patchUnitMaterial(m, { reveal: shared.reveal, levelY: shared.levelY, glow: shared.glow, level: li, sun });
           return m;
         }
         // patched for this level (this mount) already, or animated by the view: keep it
         if (rec.reveal === shared.reveal || host.liveMats?.has(m)) return m;
         if (!clones.has(m)) {
           const c = m.clone();
-          patchUnitMaterial(c, { reveal: shared.reveal, levelY: shared.levelY, glow: shared.glow, level: li, orig: rec.base });
+          patchUnitMaterial(c, { reveal: shared.reveal, levelY: shared.levelY, glow: shared.glow, level: li, orig: rec.base, sun });
           clones.set(m, c);
         }
         return clones.get(m);
@@ -317,7 +341,7 @@ export function createHost(unit, ctx) {
     }
     const size = host.box.getSize(new Vector3());
     const mat = new MeshStandardMaterial({ color: PROXY_COLOR[unit.family] || PROXY_COLOR.water, roughness: 0.6, metalness: 0.3 });
-    patchUnitMaterial(mat, { reveal: shared.reveal, levelY: shared.levelY, glow: shared.glow, level: li });
+    patchUnitMaterial(mat, { reveal: shared.reveal, levelY: shared.levelY, glow: shared.glow, level: li, sun: level.kind === 'plant' ? SUN_BELOW : SUN_UP });
     const proxy = new Mesh(new BoxGeometry(size.x, size.y, size.z), mat);
     host.box.getCenter(proxy.position);
     proxy.castShadow = level.kind !== 'plant';

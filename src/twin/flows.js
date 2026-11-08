@@ -91,6 +91,9 @@ export function createFlows({ layout, levels, levelU, modeU, ctxU, quality }) {
       if (!(total > 0)) return;
       const [rs, rd] = revealWindow(run, levels);
       const size = finite(run.size, 0.2);
+      // a run that meets a model (run.ends: a port ref at its start / end) stops exactly at
+      // the collar or nozzle; every other end and joint runs on to fill the corner
+      const atPort = [!!run.ends?.[0], !!run.ends?.[1]];
       let s0 = 0;
       for (let i = 1; i < pts.length; i++) {
         a.fromArray(pts[i - 1]);
@@ -99,23 +102,23 @@ export function createFlows({ layout, levels, levelU, modeU, ctxU, quality }) {
         if (len < 1e-4) continue;
         dir.subVectors(b, a).normalize();
         let geo;
-        let ext;
+        const ext = isAir ? Math.max(0.28, size) / 2 : Math.max(0.065, size * 0.55) * 0.2;
+        const extA = i === 1 && atPort[0] ? 0 : ext;
+        const extB = i === pts.length - 1 && atPort[1] ? 0 : ext;
+        const L = len + extA + extB;
         if (isAir) {
           const wDim = Math.max(0.28, size);
           const hDim = Math.max(0.22, size * 0.62);
-          ext = wDim / 2;
-          const L = len + ext * 2;
           if (Math.abs(dir.y) > 0.9) geo = new BoxGeometry(wDim, L, wDim * 0.85);
           else if (Math.abs(dir.x) > 0.9) geo = new BoxGeometry(L, hDim, wDim);
           else geo = new BoxGeometry(wDim, hDim, L);
         } else {
           const r = Math.max(0.065, size * 0.55);
-          ext = r * 0.2;
-          geo = new CylinderGeometry(r, r, len + ext * 2, 10, 1, false);
+          geo = new CylinderGeometry(r, r, L, 10, 1, false);
           q.setFromUnitVectors(up, dir);
           geo.applyQuaternion(q);
         }
-        const mid = a.clone().add(b).multiplyScalar(0.5);
+        const mid = a.clone().add(b).multiplyScalar(0.5).addScaledVector(dir, (extB - extA) / 2);
         geo.translate(mid.x, mid.y, mid.z);
         const g2 = geo.toNonIndexed();
         geo.dispose();

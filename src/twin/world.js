@@ -9,11 +9,19 @@
  * Each level is a Group, so the scroll intro (drop + dissolve) and the
  * Exploded mode simply move groups; meshes built in world space (service
  * runs, particles) apply the same per-level shift in their vertex shader.
+ *
+ * The plant (AHUs, tower, chillers, pumps, the heating plant) and the VAV
+ * terminal are ClarityView's own models, built later by the lazy units chunk
+ * (units/index.js) and handed in: addUnit(host), setVavGeometry(), setPlantXray().
+ * Until then (or if that chunk cannot load) the VAVs are plain boxes and
+ * addProxyEquipment() draws the layout's equipment as neutral boxes.
  */
 import {
   AdditiveBlending,
+  Box3,
   BoxGeometry,
   BufferAttribute,
+  BufferGeometry,
   CapsuleGeometry,
   Color,
   DoubleSide,
@@ -49,11 +57,15 @@ import {
   patchReveal,
   rng,
   roofTexture,
+  smoothstep,
   thermalColor,
 } from './shared.js';
-import { buildEquipment } from './equipment.js';
 
 const ZONE_TEX_W = 64;
+// VAV terminals: the full baked terminal within VAV_NEAR m of a level's terminals, its distant copy past VAV_FAR
+const VAV_NEAR = 40;
+const VAV_FAR = 50;
+const _vavBox = new Box3();
 const ZONE_TEX_H = 4;
 const PEOPLE_PER_ZONE = 5;
 
@@ -118,17 +130,14 @@ export function createWorld({ layout, levels, quality, modeU, ctxU }) {
   const texRoof = own(roofTexture());
   texRoof.repeat.set(10, 6);
 
-  const texCache = new Map();
-  const tex = (key, f) => {
-    if (!texCache.has(key)) texCache.set(key, own(f()));
-    return texCache.get(key);
-  };
   const unitBox = own(new BoxGeometry(1, 1, 1));
   const unitPlaneY = own(new PlaneGeometry(1, 1).rotateX(-Math.PI / 2));
   const unitPlane = own(new PlaneGeometry(1, 1));
   const deskGeo = own(makeDeskGeometry());
   const personGeo = own(makePersonGeometry(quality));
   const vavGeo = own(makeVavGeometry());
+  vavGeo.computeBoundingBox();
+  const vavPickGeo = own(boxOf(vavGeo.boundingBox));
 
   /* ── per-level materials (clones share programs; differ by uReveal) ─ */
   function levelMaterials(reveal, cut) {
@@ -156,9 +165,13 @@ export function createWorld({ layout, levels, quality, modeU, ctxU }) {
   /* ── build every level ──────────────────────────────────────── */
   const levelGroups = [];
   const levelState = [];
+  // each level's storey height (to the next level up)
+  const storeyH = levels.list.map((L, i) => (levels.list[i + 1] ? levels.list[i + 1].y - L.y : 4));
   const pickZoneMeshes = [];
   const pickVavMeshes = [];
-  const equipment = new Map();
+  const vavMeshes = [];
+  const equipment = new Map(); // id → { id, host?, proxy?, eq?, level }
+  let units = null; // the units chunk, once attached (bboxFor / picking ask it first)
   const casters = [];
   const allLineMats = [];
   const rand = rng(1234);
@@ -191,6 +204,8 @@ export function createWorld({ layout, levels, quality, modeU, ctxU }) {
       kind: L.kind,
       y: L.y,
       reveal,
+      // the level group's current world y (intro drop + Exploded): the units' dissolve is level-local
+      levelY: { value: L.y },
       cut,
       lineMat,
       lineScale: 1,
@@ -358,10 +373,12 @@ export function createWorld({ layout, levels, quality, modeU, ctxU }) {
       desks.castShadow = false;
       g.add(desks);
 
-      // VAV boxes, oriented along their branch duct's last leg
-      const vavs = new InstancedMesh(vavGeo.clone(), mats.vav, n);
+      // VAV terminals at the end of their branch, the inlet facing the duct's last leg
+      // (a plain box until the units chunk hands over the baked ClarityView terminal)
+      const vavs = new InstancedMesh(shareGeometry(vavGeo), mats.vav, n);
       own(vavs.geometry);
       const vZ = new Float32Array(n);
+      const vavSpan = new Box3(); // level-local: where this level's terminals hang (their distance LOD)
       lz.forEach((z, i) => {
         const p = z.vavPos || [(z.x0 + z.x1) / 2, L.y + 3.4, (z.z0 + z.z1) / 2];
         const run = layout.runs.find((r) => r.id === `sa-${z.id}`);
@@ -369,19 +386,27 @@ export function createWorld({ layout, levels, quality, modeU, ctxU }) {
         if (run && run.points.length >= 2) {
           const a = run.points[run.points.length - 2];
           const b = run.points[run.points.length - 1];
-          rot = Math.abs(b[0] - a[0]) > Math.abs(b[2] - a[2]) ? 0 : Math.PI / 2;
+          rot = Math.atan2(-(b[2] - a[2]), b[0] - a[0]);
         }
         o.position.set(p[0], p[1] - L.y, p[2]);
         o.rotation.set(0, rot, 0);
         o.scale.set(1, 1, 1);
         o.updateMatrix();
         vavs.setMatrixAt(i, o.matrix);
+        vavSpan.expandByPoint(o.position);
         vZ[i] = zoneIndex.get(z.id);
       });
-      vavs.geometry.setAttribute('aZone', new InstancedBufferAttribute(vZ, 1));
-      vavs.userData.pickVavs = lz.map((z) => z.vav);
+      const vZAttr = new InstancedBufferAttribute(vZ, 1);
+      vavs.geometry.setAttribute('aZone', vZAttr);
       g.add(vavs);
-      pickVavMeshes.push(vavs);
+      // picking: an invisible box per VAV with the same matrices (hover never ray-tests the terminal's triangles)
+      const vavPicks = new InstancedMesh(vavPickGeo, mats.pick, n);
+      vavPicks.instanceMatrix.copy(vavs.instanceMatrix);
+      vavPicks.userData.pickVavs = lz.map((z) => z.vav);
+      vavPicks.frustumCulled = false;
+      g.add(vavPicks);
+      pickVavMeshes.push(vavPicks);
+      vavMeshes.push({ mesh: vavs, picks: vavPicks, aZone: vZAttr, li, span: vavSpan.expandByScalar(1), near: null, far: null, isFar: false });
 
       // occupants
       ls.people = buildPeople(g, personGeo, mats.person, lz, seats, zoneIndex, rand, own);
@@ -424,13 +449,16 @@ export function createWorld({ layout, levels, quality, modeU, ctxU }) {
         vline(x, z, 0, top);
       buildPlantExtras(g, mats, hx, hz, own, ls);
       // plant-room lighting (the sun never reaches B1)
-      for (const [x, z] of [
-        [-12, 2],
-        [12, -4],
+      // Two gentle lamps between the pads, not over them: one right over HHW-1 turned its white
+      // steam header into a neon tube under bloom, and one beside CWP-1 did the same to its
+      // insulated headers. The east lamp hangs over the aisle in front of the chillers' ends.
+      for (const [x, z, power] of [
+        [-6.5, -2.5, 24],
+        [8.2, -6.1, 30],
       ]) {
         // parented to the root (always visible): a light that appears or disappears
         // with its level would change the light count and recompile every material
-        const pl = new PointLight(0xcfe3ff, 45, 24, 1.5);
+        const pl = new PointLight(0xcfe3ff, power, 24, 1.5);
         pl.position.set(x, L.y + top - 0.6, z);
         pl.userData.localY = top - 0.6;
         root.add(pl);
@@ -449,36 +477,6 @@ export function createWorld({ layout, levels, quality, modeU, ctxU }) {
       boxAt(innerW + 0.3, 0.18, innerD + 0.3, ocx, 3.09, ocz, mats.band, {});
       rect(1.1, hx + 0.16, hz + 0.16);
       rect(-0.45, hx + 0.16, hz + 0.16);
-    }
-
-    // equipment on this level
-    for (const eq of layout.equipment.filter((e) => e.level === L.id)) {
-      const item = buildEquipment(eq, { reveal, own, rand, quality, tex });
-      if (!item) continue;
-      item.group.position.set(eq.x, eq.y - L.y, eq.z);
-      item.group.rotation.y = finite(eq.rotY, 0);
-      item.group.userData.pickId = eq.id;
-      item.group.traverse((o2) => {
-        if (o2.isMesh && o2.castShadow) ls.casters.push(o2);
-      });
-      g.add(item.group);
-      equipment.set(eq.id, { ...item, eq, level: li });
-      if (L.kind === 'plant') {
-        // housekeeping pad
-        const rotQ = Math.abs(Math.sin(finite(eq.rotY, 0))) > 0.5;
-        const pw = (rotQ ? eq.d : eq.w) + 0.5;
-        const pd = (rotQ ? eq.w : eq.d) + 0.5;
-        boxAt(pw, 0.1, pd, eq.x, 0.0, eq.z, mats.pad, { cast: false, receive: true });
-      }
-    }
-
-    // B1: x-ray silhouettes of the plant, visible through the L1 slab and the ground
-    if (L.kind === 'plant' && equipment.size) {
-      const xr = buildPlantXray([...equipment.values()].filter((it) => it.level === li), own);
-      if (xr) {
-        g.add(xr);
-        ls.xray = xr;
-      }
     }
 
     // lines
@@ -574,7 +572,6 @@ export function createWorld({ layout, levels, quality, modeU, ctxU }) {
         // landing flash on the blueprint lines
         ls.flash = Math.max(0, ls.flash - dt * 1.4);
       }
-      for (const item of equipment.values()) item.update?.(state, dt, t, { reducedMotion, mode });
     },
     /** intro: per-level progress 0..1 (drop + dissolve); lines lead the solids. */
     setLevelIntro(li, r, dropDist) {
@@ -607,6 +604,7 @@ export function createWorld({ layout, levels, quality, modeU, ctxU }) {
         const ls = levelState[i];
         ls.explode = explodeOffsets[i] * explodeAmt;
         levelGroups[i].position.y = levels.list[i].y + ls.drop + ls.explode;
+        ls.levelY.value = levelGroups[i].position.y;
         // the outline stays put while the level drops into it
         if (ls.lines) ls.lines.position.y = -ls.drop;
         if (ls.lights) for (const pl of ls.lights) pl.position.y = levelGroups[i].position.y + pl.userData.localY;
@@ -636,8 +634,130 @@ export function createWorld({ layout, levels, quality, modeU, ctxU }) {
     setLineResolution(w, h) {
       for (const m of allLineMats) m.resolution.set(w, h);
     },
-    setPixelRatio(px) {
-      for (const item of equipment.values()) item.setPixelRatio?.(px);
+    setPixelRatio() {
+      /* the units chunk scales the tower plume itself (units.setPixelRatio) */
+    },
+    /** The units chunk: bboxFor and picking ask it first. */
+    attachUnits(u) {
+      units = u;
+    },
+    /** Register a built unit (ClarityView model or its proxy) on its level. */
+    addUnit(host) {
+      const ls = levelState[host.li];
+      const entry = { id: host.id, host, level: host.li };
+      for (const id of [host.id, ...host.subs.map((x) => x.id)]) equipment.set(id, entry);
+      host.holder.visible = ls.solidVis !== false;
+      for (const m of host.casters) {
+        if (ls.castDone !== undefined) m.castShadow = ls.castDone;
+        ls.casters.push(m);
+        casters.push(m);
+      }
+    },
+    /**
+     * The baked VAV terminal (inlet collar at the origin, +x downstream) for every zone, and
+     * its distant copy (`far`, a few boxes): updateVavLod() swaps each level between them.
+     */
+    setVavGeometry(geo, box, far = null) {
+      if (!geo) return;
+      own(geo);
+      if (far) own(far);
+      const pick = own(boxOf(box || (geo.computeBoundingBox(), geo.boundingBox)));
+      const withZone = (src, v) => {
+        const g2 = shareGeometry(src);
+        g2.setAttribute('aZone', v.aZone);
+        return own(g2);
+      };
+      for (const v of vavMeshes) {
+        v.near = withZone(geo, v);
+        v.far = far ? withZone(far, v) : null;
+        v.isFar = false;
+        v.mesh.geometry = v.near;
+        v.picks.geometry = pick;
+      }
+    },
+    /**
+     * Per frame, from the camera position:
+     * - distance LOD for the terminals, per level: past VAV_FAR metres from the nearest
+     *   terminal of a level (where one is a few pixels) that level draws the distant copy,
+     *   back to the full terminal inside VAV_NEAR;
+     * - the plant x-ray (the plant seen through the ground) fades out while the camera is
+     *   inside the plant room, where it would only glow through the models' own casings.
+     */
+    updateForCamera(camPos) {
+      for (let li = 0; li < levelState.length; li++) {
+        const ls = levelState[li];
+        if (!ls.xray) continue;
+        const top = levelGroups[li].position.y + storeyH[li];
+        const a = smoothstep(top - 0.3, top + 1.2, camPos.y);
+        ls.xray.material.uniforms.uAmt.value = a;
+        ls.xray.visible = ls.solidVis !== false && a > 0.001;
+      }
+      for (const v of vavMeshes) {
+        if (!v.far) continue;
+        _vavBox.copy(v.span);
+        const dy = levelGroups[v.li].position.y;
+        _vavBox.min.y += dy;
+        _vavBox.max.y += dy;
+        const d = _vavBox.distanceToPoint(camPos);
+        const isFar = v.isFar ? d > VAV_NEAR : d > VAV_FAR;
+        if (isFar !== v.isFar) {
+          v.isFar = isFar;
+          v.mesh.geometry = isFar ? v.far : v.near;
+        }
+      }
+    },
+    /** B1 x-ray silhouettes, rebuilt from each plant unit's baked geometry ({ li, geometry } level-local). */
+    setPlantXray(list) {
+      const byLevel = new Map();
+      for (const it of list || []) {
+        if (!it?.geometry) continue;
+        if (!byLevel.has(it.li)) byLevel.set(it.li, []);
+        byLevel.get(it.li).push(it.geometry);
+      }
+      for (const [li, geos] of byLevel) {
+        const ls = levelState[li];
+        if (!ls || ls.kind !== 'plant') continue;
+        if (ls.xray) {
+          ls.xray.removeFromParent();
+          ls.xray.geometry.dispose();
+        }
+        const xr = buildXrayMesh(geos, own);
+        if (xr) {
+          xr.visible = ls.solidVis !== false;
+          levelGroups[li].add(xr);
+          ls.xray = xr;
+        }
+      }
+    },
+    /** Fallback when the units chunk is unavailable: the layout's equipment as neutral boxes. */
+    addProxyEquipment() {
+      for (const eq of layout.equipment) {
+        if (equipment.has(eq.id)) continue;
+        const li = levels.byId.get(eq.level);
+        if (li === undefined) continue;
+        const ls = levelState[li];
+        const mat = own(patchReveal(new MeshStandardMaterial({ color: eq.kind === 'ahu' ? '#6d7c8c' : '#5f7488', roughness: 0.6, metalness: 0.3 }), ls.reveal));
+        const mesh = new Mesh(own(new BoxGeometry(eq.w, eq.h, eq.d).translate(0, eq.h / 2, 0)), mat);
+        mesh.position.set(eq.x, eq.y - levels.list[li].y, eq.z);
+        mesh.rotation.y = finite(eq.rotY, 0);
+        mesh.castShadow = true;
+        mesh.userData.pickId = eq.id;
+        mesh.visible = ls.solidVis !== false;
+        levelGroups[li].add(mesh);
+        ls.casters.push(mesh);
+        casters.push(mesh);
+        equipment.set(eq.id, { id: eq.id, eq, proxy: mesh, level: li });
+      }
+    },
+    /** Equipment under the ray: { id, d } (units: boxes; proxies: their box). */
+    pickEquipment(raycaster) {
+      let best = units ? units.pick(raycaster) : null;
+      for (const it of equipment.values()) {
+        if (!it.proxy || !it.proxy.parent?.visible) continue;
+        const h = raycaster.intersectObject(it.proxy, false)[0];
+        if (h && (!best || h.distance < best.d)) best = { id: it.id, d: h.distance };
+      }
+      return best;
     },
     /** World-space box for an id (zone, VAV, equipment, level, building). */
     bboxFor(id, outCenter, outSize) {
@@ -659,7 +779,8 @@ export function createWorld({ layout, levels, quality, modeU, ctxU }) {
         outSize.set(1.6, 0.8, 1.6);
         return true;
       }
-      if (equipment.has(id)) {
+      if (units && units.bboxFor(id, outCenter, outSize)) return true;
+      if (equipment.has(id) && equipment.get(id).eq) {
         const { eq, level } = equipment.get(id);
         const rotQ = Math.abs(Math.sin(finite(eq.rotY, 0))) > 0.5;
         outCenter.set(eq.x, eq.y + eq.h / 2 + this.levelShift(level), eq.z);
@@ -682,7 +803,6 @@ export function createWorld({ layout, levels, quality, modeU, ctxU }) {
       return false;
     },
     dispose() {
-      for (const item of equipment.values()) item.dispose?.();
       root.traverse((o) => {
         if (o.isMesh || o.isLine || o.isPoints) {
           if (o.geometry) disposables.add(o.geometry);
@@ -707,6 +827,22 @@ function withPart(geo, part) {
   const n = geo.attributes.position.count;
   geo.setAttribute('aPart', new BufferAttribute(new Float32Array(n).fill(part), 1));
   return geo;
+}
+
+/** A geometry that shares another's attributes (its own instanced attributes can then be added). */
+function shareGeometry(src) {
+  const g = new BufferGeometry();
+  for (const [k, v] of Object.entries(src.attributes)) g.setAttribute(k, v);
+  if (src.index) g.setIndex(src.index);
+  g.boundingBox = src.boundingBox?.clone() || null;
+  g.boundingSphere = src.boundingSphere?.clone() || null;
+  return g;
+}
+function boxOf(b) {
+  const sx = Math.max(0.05, b.max.x - b.min.x);
+  const sy = Math.max(0.05, b.max.y - b.min.y);
+  const sz = Math.max(0.05, b.max.z - b.min.z);
+  return new BoxGeometry(sx, sy, sz).translate((b.min.x + b.max.x) / 2, (b.min.y + b.max.y) / 2, (b.min.z + b.max.z) / 2);
 }
 
 function makeDeskGeometry() {
@@ -745,6 +881,12 @@ function makeVavGeometry() {
   const diff = new BoxGeometry(0.62, 0.05, 0.62).translate(0.2, -0.44, 0);
   const neck = new BoxGeometry(0.22, 0.24, 0.22).translate(0.2, -0.32, 0);
   const g = mergeGeometries([withPart(box, 0), withPart(coil, 1), withPart(inlet, 0), withPart(neck, 0), withPart(diff, 2)].map((p) => p.toNonIndexed()));
+  g.deleteAttribute('uv');
+  // the same per-vertex colour attribute the baked ClarityView terminal carries
+  const n = g.attributes.position.count;
+  const col = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) col.set([0.36, 0.4, 0.45], i * 3);
+  g.setAttribute('aCol', new BufferAttribute(col, 3));
   return g;
 }
 
@@ -890,33 +1032,19 @@ function buildPlantExtras(g, mats, hx, hz, own, ls) {
   for (let i = 0; i < 8; i++) pl.push(new BoxGeometry(0.02, 0.05, 0.05).translate(-hx + 0.49, 1.95 - i * 0.09, -2.9));
   g.add(new Mesh(own(mergeGeometries(pl)), ledMat));
   pl.forEach((p) => p.dispose());
-  // expansion tank + air separator near the boiler
-  const tank = new Mesh(own(new CapsuleGeometry(0.45, 0.9, 4, 14).translate(-8.6, 0.9, 9.5)), tankMat);
+  // expansion tank + air separator by the heating hot water plant, west of its pad (east of it,
+  // the tank stood in the line of sight to the HW pumps from the Inspect angle)
+  const tank = new Mesh(own(new CapsuleGeometry(0.45, 0.9, 4, 14).translate(-17.5, 0.9, 7.5)), tankMat);
   tank.castShadow = true;
   ls.casters.push(tank);
   g.add(tank);
 }
 
-function buildPlantXray(items, own) {
-  const parts = [];
-  const m = new Matrix4();
-  for (const it of items) {
-    it.group.updateMatrix();
-    it.group.traverse((o) => {
-      if (!o.isMesh || !o.geometry?.attributes?.normal) return;
-      o.updateMatrix();
-      m.copy(it.group.matrix);
-      if (o.parent && o.parent !== it.group) m.multiply(o.parent.matrix);
-      m.multiply(o.matrix);
-      let geo = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
-      for (const k of Object.keys(geo.attributes)) if (k !== 'position' && k !== 'normal') geo.deleteAttribute(k);
-      geo.applyMatrix4(m);
-      parts.push(geo);
-    });
-  }
+/** One additive rim-lit silhouette mesh from level-local geometries (position + normal). */
+function buildXrayMesh(geos, own) {
+  const parts = geos.filter((g) => g?.attributes?.position && g.attributes.normal);
   if (!parts.length) return null;
-  const geo = own(mergeGeometries(parts));
-  parts.forEach((p) => p.dispose());
+  const geo = own(parts.length === 1 ? parts[0] : mergeGeometries(parts));
   if (!geo) return null;
   const mat = own(
     new ShaderMaterial({
@@ -1287,11 +1415,11 @@ function makeVavMaterial(uniforms) {
   return new ShaderMaterial({
     uniforms,
     vertexShader: /* glsl */ `
-      attribute float aZone; attribute float aPart;
+      attribute float aZone; attribute float aPart; attribute vec3 aCol;
       ${ZONE_VERT}
-      varying vec3 vN; varying float vPart; varying vec4 vZ1; varying vec4 vZ2; varying vec3 vBuildP;
+      varying vec3 vN; varying float vPart; varying vec4 vZ1; varying vec4 vZ2; varying vec3 vBuildP; varying vec3 vCol;
       void main() {
-        vPart = aPart;
+        vPart = aPart; vCol = aCol;
         vZ1 = zoneRow(aZone, 1.0);
         vZ2 = zoneRow(aZone, 2.0);
         vec4 lp = instanceMatrix * vec4(position, 1.0);
@@ -1301,13 +1429,14 @@ function makeVavMaterial(uniforms) {
       }`,
     fragmentShader: /* glsl */ `
       ${FRAG_HEAD}
-      varying vec3 vN; varying float vPart; varying vec4 vZ1; varying vec4 vZ2;
+      varying vec3 vN; varying float vPart; varying vec4 vZ1; varying vec4 vZ2; varying vec3 vCol;
       void main() {
         ${GLSL_DISSOLVE}
         vec3 N = normalize(vN);
         float shade = 0.45 + 0.55 * max(N.y, 0.0) + 0.2 * abs(N.x);
-        vec3 col = vec3(0.36, 0.40, 0.45) * shade * (0.45 + 0.6 * uDay);
-        if (vPart > 0.5 && vPart < 1.5) col = mix(vec3(0.08, 0.05, 0.04), vec3(1.0, 0.45, 0.16) * 2.6, vZ2.r);
+        vec3 col = vCol * shade * (0.45 + 0.6 * uDay);
+        // the reheat coil section: its own sheet metal, glowing with the zone's reheat %
+        if (vPart > 0.5 && vPart < 1.5) col = mix(col * 0.8, vec3(1.0, 0.45, 0.16) * 2.6, vZ2.r);
         if (vPart > 1.5) col = vec3(0.5, 0.55, 0.62) * (0.5 + 0.5 * uDay) + vec3(0.3, 0.6, 1.0) * vZ2.b * uAir * 1.5;
         col += uAccent * vZ1.g * 0.9;
         float pulse = vZ1.r * (0.55 + 0.45 * sin(uTime * 5.0));

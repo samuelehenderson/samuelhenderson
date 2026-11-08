@@ -17,6 +17,7 @@ import {
   RGBAFormat,
   RepeatWrapping,
   SRGBColorSpace,
+  ShaderChunk,
 } from 'three';
 
 export const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -209,6 +210,80 @@ export function patchReveal(material, revealUniform) {
   const key = material.customProgramCacheKey?.bind(material);
   material.customProgramCacheKey = () => `reveal|${key ? key() : ''}`;
   return material;
+}
+
+/**
+ * The unit (ClarityView model) variant of patchReveal: the dissolve front is
+ * measured in world space less the level's current origin (uLevelY, updated
+ * with the intro drop and Exploded), so nested moving parts dissolve with the
+ * casing instead of in their own local frame; and emissive radiance is scaled
+ * by uUnitGlow (0.5 under bloom) so ClarityView's status bands read as small
+ * lights. The program key keeps the material's own key (or its original
+ * onBeforeCompile source) so two different original shaders never share a
+ * program. Idempotent per material; returns the patch record.
+ *
+ * uSunK scales the directional lights (sun, moon) on the unit: 0 in the B1 plant room, which
+ * no sunlight reaches. three lights with no occlusion, and B1 units receive no shadows, so the
+ * midday sun lit the basement plant and its white pipework bloomed into neon tubes.
+ */
+const UNIT_PATCHED = new WeakMap();
+/** The layer only the sun's shadow camera renders: shadow-only casters (a unit's baked copy). */
+export const SHADOW_LAYER = 5;
+export const SUN_UP = { value: 1 };
+export const SUN_BELOW = { value: 0 };
+const DIR_INFO = 'getDirectionalLightInfo( directionalLight, directLight );';
+const LIGHTS_BEGIN = ShaderChunk.lights_fragment_begin.includes(DIR_INFO)
+  ? ShaderChunk.lights_fragment_begin.replace(DIR_INFO, `${DIR_INFO}\n\t\tdirectLight.color *= uSunK;`)
+  : null;
+export function unitPatchOf(material) {
+  return UNIT_PATCHED.get(material) || null;
+}
+export function patchUnitMaterial(material, { reveal, levelY, glow, level = 0, orig = null, sun = SUN_UP }) {
+  const had = UNIT_PATCHED.get(material);
+  if (had) return had;
+  // capture the original before patching (a clone for another level passes the first one's)
+  const base = orig || { obc: material.onBeforeCompile, key: material.customProgramCacheKey() };
+  const prev = base.obc;
+  material.onBeforeCompile = function (shader, renderer) {
+    prev.call(this, shader, renderer);
+    shader.uniforms.uReveal = reveal;
+    shader.uniforms.uLevelY = levelY;
+    shader.uniforms.uUnitGlow = glow;
+    shader.uniforms.uSunK = sun;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vBuildP;\nuniform float uLevelY;')
+      .replace(
+        '#include <project_vertex>',
+        `#include <project_vertex>
+        vec4 bP = vec4(transformed, 1.0);
+        #ifdef USE_INSTANCING
+          bP = instanceMatrix * bP;
+        #endif
+        vBuildP = (modelMatrix * bP).xyz - vec3(0.0, uLevelY, 0.0);`,
+      );
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>\nvarying vec3 vBuildP;\nuniform float uReveal;\nuniform float uUnitGlow;\n${GLSL_NOISE}`)
+      .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>\n${GLSL_DISSOLVE}`);
+    if (LIGHTS_BEGIN && shader.fragmentShader.includes('#include <lights_fragment_begin>')) {
+      shader.fragmentShader = `uniform float uSunK;\n${shader.fragmentShader.replace('#include <lights_fragment_begin>', LIGHTS_BEGIN)}`;
+    }
+    if (shader.fragmentShader.includes('#include <emissivemap_fragment>')) {
+      shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <emissivemap_fragment>',
+        `#include <emissivemap_fragment>\n totalEmissiveRadiance *= uUnitGlow;\n totalEmissiveRadiance += ${DISSOLVE_GLOW} * bEdge;`,
+      );
+    } else {
+      shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <opaque_fragment>',
+        `outgoingLight += ${DISSOLVE_GLOW} * bEdge;\n#include <opaque_fragment>`,
+      );
+    }
+  };
+  material.customProgramCacheKey = () => `unit|${base.key}`;
+  material.needsUpdate = true;
+  const rec = { level, reveal, base };
+  UNIT_PATCHED.set(material, rec);
+  return rec;
 }
 
 /* ── data textures ───────────────────────────────────────────────── */

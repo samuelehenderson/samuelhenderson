@@ -43,12 +43,22 @@ function saneRanges(sim) {
   for (const [id, a] of Object.entries(s.ahus)) {
     for (const k of ['sfSpeed', 'rfSpeed', 'oad', 'ccv', 'hcv']) chk(a[k], 0, 100, `${id}.${k}`);
     for (const k of ['sat', 'satSp', 'mat', 'rat']) chk(a[k], 40, 110, `${id}.${k}`);
+    for (const k of ['rad', 'ead']) chk(a[k], 0, 100, `${id}.${k}`);
+    for (const k of ['pfDp', 'ffDp']) chk(a[k], 0, 3, `${id}.${k}`);
+    if (typeof a.sfFault !== 'boolean') e.push(`${id}.sfFault`);
     chk(a.ssp, 0, 3, `${id}.ssp`); chk(a.sspSp, 0.5, 2, `${id}.sspSp`); chk(a.cfm, 0, a.cfmDesign * 1.1, `${id}.cfm`);
     if (typeof a.on !== 'boolean') e.push(`${id}.on`);
   }
   const P = s.plant;
-  for (const [id, c] of Object.entries(P.chillers)) { chk(c.load, 0, 100, `${id}.load`); chk(c.chws, 35, 90, `${id}.chws`); chk(c.chwr, 35, 95, `${id}.chwr`); chk(c.kw, 0, 150, `${id}.kw`); }
-  chk(P.boiler.fire, 0, 100, 'boiler.fire'); chk(P.boiler.hws, 60, 200, 'boiler.hws'); chk(P.boiler.hwr, 50, 200, 'boiler.hwr');
+  for (const [id, c] of Object.entries(P.chillers)) { chk(c.load, 0, 100, `${id}.load`); chk(c.chws, 35, 90, `${id}.chws`); chk(c.chwr, 35, 95, `${id}.chwr`); chk(c.kw, 0, 150, `${id}.kw`); chk(c.cwl, 50, 110, `${id}.cwl`); }
+  const H = P.hhw;
+  chk(H.hws, 60, 200, 'hhw.hws'); chk(H.hwr, 50, 200, 'hhw.hwr');
+  for (const k of ['u', 'cv1', 'cv1Fb', 'cv2', 'cv2Fb', 'byp', 'bypFb']) chk(H[k], 0, 100, `hhw.${k}`);
+  chk(H.dp, 0, 30, 'hhw.dp'); chk(H.load, 0, 1500, 'hhw.load'); chk(H.steam, 0, 1600, 'hhw.steam');
+  H.hx.forEach((x, i) => { chk(x.iso1, 0, 100, `hhw.hx${i + 1}.iso1`); if (x.iso2 !== 0 && x.iso2 !== 1) e.push(`hhw.hx${i + 1}.iso2=${x.iso2}`); });
+  if (H.hx.length !== 2) e.push(`hhw.hx.length=${H.hx.length}`);
+  for (const k of ['enabled', 'lagHx', 'lagPump', 'tempAlarm']) if (typeof H[k] !== 'boolean') e.push(`hhw.${k}`);
+  if (!['HWP-1', 'HWP-2'].includes(H.leadPump)) e.push(`hhw.leadPump=${H.leadPump}`);
   chk(P.tower.fan, 0, 100, 'tower.fan'); chk(P.tower.cws, 40, 110, 'tower.cws'); chk(P.tower.cwr, 40, 115, 'tower.cwr');
   for (const [id, p] of Object.entries(P.pumps)) chk(p.speed, 0, 100, `${id}.speed`);
   chk(P.chwsSp, 40, 50, 'chwsSp'); chk(P.hwsSp, 100, 180, 'hwsSp');
@@ -85,11 +95,17 @@ section('layout');
   ok(L.zones.filter((z) => z.level === 'L1' && z.name.startsWith('Lobby')).length === 2, 'L1 has two lobby cells');
   ok(L.zones.find((z) => z.id === 'L3-07').exposure === 'SW', 'L3-07 is the SW corner');
   const eq = new Map(L.equipment.map((e) => [e.id, e]));
-  for (const id of ['AHU-1', 'AHU-2', 'CH-1', 'CH-2', 'B-1', 'CHWP-1', 'CHWP-2', 'HWP-1', 'CWP-1', 'CT-1']) ok(eq.has(id), `equipment ${id}`);
+  const EQ_IDS = ['AHU-1', 'AHU-2', 'CH-1', 'CH-2', 'HHW-1', 'CHWP-1', 'CHWP-2', 'HWP-1', 'HWP-2', 'CWP-1', 'CT-1'];
+  for (const id of EQ_IDS) ok(eq.has(id), `equipment ${id}`);
+  ok(L.equipment.length === EQ_IDS.length, `exactly ${EQ_IDS.length} pieces of equipment (got ${L.equipment.length})`);
+  const json = JSON.stringify(L);
+  ok(!json.includes('"B-1"') && !/boiler/i.test(json), 'the layout has no B-1 / boiler');
   for (const e of L.equipment) {
-    ok(['ahu', 'chiller', 'boiler', 'pump', 'tower'].includes(e.kind), `kind ${e.id}`);
+    ok(['ahu', 'chiller', 'hhw', 'pump', 'tower'].includes(e.kind), `kind ${e.id}`);
+    if (e.parent !== undefined) ok(eq.has(e.parent) && eq.get(e.parent).level === e.level && e.kind === 'pump', `${e.id}: parent ${e.parent} exists on the same level`);
     ok([e.x, e.y, e.z, e.w, e.h, e.d, e.rotY].every(Number.isFinite), `finite geometry ${e.id}`);
     ok(Math.abs(e.x) + e.w / 2 <= 20.01 && Math.abs(e.z) + e.d / 2 <= 12.01, `${e.id} inside footprint`);
+    ok(e.w > 0 && e.h > 0 && e.d > 0, `${e.id} has a real size`);
     ok(e.y === L.levels.find((l) => l.id === e.level).y, `${e.id} sits on its level`);
   }
   const KINDS = ['sa', 'ra', 'chws', 'chwr', 'hws', 'hwr', 'cws', 'cwr'];
@@ -120,6 +136,8 @@ section('layout');
     ok(L.runs.some((r) => r.id === `hws-L${n}`) && L.runs.some((r) => r.id === `hwr-L${n}`), `HW loops L${n}`);
   }
   for (const k of KINDS) ok(L.runs.some((r) => r.kind === k), `has ${k} runs`);
+  ok(['CHWP-1', 'CHWP-2'].every((id, i) => eq.get(id).parent === `CH-${i + 1}`) && ['HWP-1', 'HWP-2'].every((id) => eq.get(id).parent === 'HHW-1'), 'skid / plant pumps name their unit as parent');
+  ok(eq.get('AHU-2').rotY === Math.PI && eq.get('AHU-1').rotY === 0, 'AHU-2 turned 180° (both discharge west, service sides to the core)');
   for (const k of ['sa', 'ra', 'chws', 'chwr', 'hws', 'hwr', 'cws', 'cwr']) ok(L.runs.some((r) => r.kind === k && r.level === null), `${k} riser`);
   console.log(`  ${L.runs.length} runs, ${L.equipment.length} equipment, ${L.zones.length} zones`);
 }
@@ -341,8 +359,17 @@ section('describe() + flowOf()');
   ok(bad.length === 0, `describe() well-formed for all ${ids.length} ids (bad: ${bad.slice(0, 5)})`);
   ok(sim.describe('nope') === null && sim.describe(42) === null, 'describe(unknown) → null');
   ok(sim.describe('L3-07').kind === 'zone' && sim.describe('VAV-3-07').kind === 'vav' && sim.describe('AHU-1').kind === 'ahu'
-    && sim.describe('CH-2').kind === 'chiller' && sim.describe('B-1').kind === 'boiler' && sim.describe('CWP-1').kind === 'pump'
-    && sim.describe('CT-1').kind === 'tower', 'describe kinds');
+    && sim.describe('CH-2').kind === 'chiller' && sim.describe('HHW-1').kind === 'hw plant' && sim.describe('CWP-1').kind === 'pump'
+    && sim.describe('HWP-2').kind === 'pump' && sim.describe('CHWP-1').kind === 'pump' && sim.describe('CT-1').kind === 'tower', 'describe kinds');
+  ok(sim.describe('B-1') === null, 'B-1 is gone (describe → null)');
+  const hd = sim.describe('HHW-1');
+  ok(hd.title === 'HHW-1 · Heating hot water plant' && /steam to hot water/.test(hd.subtitle), `HHW-1 card title / subtitle (${hd.title} / ${hd.subtitle})`);
+  const hrows = hd.rows.map((r) => r[0]);
+  for (const k of ['Status', 'HW supply / SP', 'HW return', 'Steam valves 1/3 · 2/3', 'Exchangers in service', 'Pumps', 'Loop dP / SP', 'Bypass valve', 'Heat to loop', 'Steam', 'OA reset']) ok(hrows.includes(k), `HHW-1 card row ${k}`);
+  ok(sim.describe('AHU-1').rows.some((r) => r[0] === 'Return / relief dampers') && sim.describe('AHU-1').rows.some((r) => r[0] === 'Filter dP (pre / final)'), 'AHU card: dampers + filter dP rows');
+  ok(sim.describe('CH-1').rows.some((r) => r[0] === 'CHW pump') && sim.describe('CH-1').rows.some((r) => r[0] === 'Condenser water out'), 'chiller card: CHW pump + CW out rows');
+  ok(/pump skid/.test(sim.describe('CHWP-1').subtitle) && sim.describe('HWP-1').rows.some((r) => r[0] === 'Staging'), 'pump cards: skid subtitle, HW staging row');
+  console.log('  HHW-1:', JSON.stringify(hd.rows.map((r) => `${r[0]}: ${r[1]}${r[2] ? ' ' + r[2] : ''}`)));
   const stuck = sim.state.faults.length && sim.layout.zones.find((z) => sim.state.zones[z.id].stuck);
   ok(stuck && sim.describe(stuck.id).rows.some((r) => r[3] === 'alarm'), 'stuck zone card shows an alarm row');
   console.log('  sample:', JSON.stringify(sim.describe('AHU-1').rows.slice(0, 4)));
@@ -350,6 +377,260 @@ section('describe() + flowOf()');
   for (const r of sim.layout.runs) { const f = sim.flowOf(r); if (!(f >= 0 && f <= 1)) fb++; if (sim.flowOf(r.id) !== f) fb++; }
   ok(fb === 0, 'flowOf() in [0,1] for every run (object or id)');
   ok(sim.flowOf('nope') === 0, 'flowOf(unknown) → 0');
+}
+
+// =============================================================================================
+section('AHU dampers, filters, fan fault; chiller condenser water out');
+{
+  const sim = createSim({ seed: 7, startHour: 11 });
+  let bad = [];
+  run(sim, 2 * 3600, {
+    speed: 60, dt: 0.1,
+    each: (st, i) => {
+      if (i % 5) return;
+      for (const [id, a] of Object.entries(st.ahus)) {
+        if (a.rad !== 100 - a.oad) bad.push(`${id} rad ${a.rad} vs oad ${a.oad}`);
+        if (a.oad <= 20 && a.ead !== 0) bad.push(`${id} ead ${a.ead.toFixed(2)} at oad ${a.oad.toFixed(1)}`);
+        const q = a.cfm / a.cfmDesign;
+        if (Math.abs(a.pfDp - 0.35 * q * q) > 1e-9 || Math.abs(a.ffDp - 0.55 * q * q) > 1e-9) bad.push(`${id} filter dP vs (cfm/design)²`);
+      }
+    },
+  });
+  ok(bad.length === 0, `return damper = 100 − OA; relief shut at minimum OA; filter dP ∝ (cfm/design)² (${bad.slice(0, 3)})`);
+  // the morning economizer opens the relief dampers (OA above the 20 % minimum)
+  const m = createSim({ seed: 7, startHour: 5.9 });
+  let econSeen = 0, econShut = 0, eadMax = 0;
+  run(m, 2 * 3600, { speed: 60, dt: 0.5, each: (st) => {
+    for (const a of Object.values(st.ahus)) {
+      if (!a.econ || a.oad <= 25) continue;
+      econSeen++; eadMax = Math.max(eadMax, a.ead);
+      if (!(a.ead > 0)) econShut++;
+    }
+  } });
+  ok(econSeen > 0 && econShut === 0, `relief opens with the economizer (${econSeen} economizer samples above min OA, ${econShut} with relief shut, max ${eadMax.toFixed(0)} %)`);
+  const a1 = sim.state.ahus['AHU-1'];
+  ok(a1.pfDp > 0.05 && a1.ffDp > a1.pfDp && a1.ffDp < 1.5, `filter dP plausible at noon (${a1.pfDp.toFixed(2)} / ${a1.ffDp.toFixed(2)} in.WC)`);
+  ok(!a1.sfFault && !sim.state.ahus['AHU-2'].sfFault, 'no fan fault without the fault');
+  const P = sim.state.plant;
+  const run1 = Object.values(P.chillers).filter((c) => c.status === 'running');
+  ok(run1.length > 0 && run1.every((c) => c.cwl > P.tower.cws + 0.4 && c.cwl < P.tower.cws + 14.5), `running chiller's CW out above tower supply (${run1.map((c) => c.cwl.toFixed(1))} vs ${P.tower.cws.toFixed(1)})`);
+  sim.injectFault('fan-fail');
+  ok(sim.state.ahus['AHU-2'].on === false, 'fan-fail stops AHU-2');
+  run(sim, 60, { speed: 60, dt: 0.1 });
+  ok(sim.state.ahus['AHU-2'].sfFault === true && sim.state.ahus['AHU-1'].sfFault === false, 'fan-fail sets AHU-2 sfFault only');
+  sim.clearFaults();
+  run(sim, 60, { speed: 60, dt: 0.1 });
+  ok(sim.state.ahus['AHU-2'].sfFault === false, 'clearFaults clears sfFault');
+  const n = createSim({ seed: 7, startHour: 2 });
+  ok(Object.values(n.state.plant.chillers).every((c) => Math.abs(c.cwl - n.state.plant.tower.cws) < 0.5), 'idle chillers: CW out = tower supply');
+}
+
+// =============================================================================================
+section('HHW plant sequences');
+{
+  const proven = (P, id) => P.pumps[id].on && P.pumps[id].speed > 5;
+  // (a) the morning warm-up (Tue): the plant enables at the 06:00 occupied start
+  const sim = createSim({ seed: 7, startHour: 5.2 });
+  const s = sim.state, P = s.plant, H = P.hhw;
+  ok(!H.enabled && !P.pumps['HWP-1'].on && !P.pumps['HWP-2'].on, 'warm-up: plant off before 06:00');
+  let order = 0, cv1AtCv2 = null, tCv1 = null, tCv2 = null, tHx2 = null, tLag = null, at7 = null, maxIso = 0, bothHx = false, maxQ = 0;
+  const T = (st) => st.hour;
+  run(sim, (7.5 - 5.2) * 3600, {
+    speed: 60, dt: 0.1,
+    each: (st) => {
+      if (H.cv2 > 0 && H.cv1Fb < 99) order++;
+      if (tCv1 === null && H.cv1Fb >= 99) tCv1 = T(st);
+      if (tCv2 === null && H.cv2Fb > 1) { tCv2 = T(st); cv1AtCv2 = H.cv1Fb; }
+      if (tHx2 === null && H.hx[1].iso1 > 90 && H.hx[1].iso2) tHx2 = T(st);
+      if (tLag === null && proven(P, 'HWP-1') && proven(P, 'HWP-2')) tLag = T(st);
+      if (H.hx[0].iso1 > 90 && H.hx[1].iso1 > 90) bothHx = true;
+      maxIso = Math.max(maxIso, H.hx[1].iso1);
+      maxQ = Math.max(maxQ, H.load);
+      if (at7 === null && st.hour >= 7) at7 = { hws: H.hws, sp: P.hwsSp };
+    },
+  });
+  const hh = (h) => (h === null ? 'never' : `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.floor((h % 1) * 60)).padStart(2, '0')}`);
+  ok(order === 0, `split range: the 2/3 valve never opens before the 1/3 valve is proven open (${order} steps)`);
+  ok(tCv1 !== null && tCv2 !== null && tCv1 <= tCv2 && cv1AtCv2 >= 99, `1/3 valve open (${hh(tCv1)}) before the 2/3 valve moves (${hh(tCv2)}, 1/3 valve then ${cv1AtCv2 && cv1AtCv2.toFixed(1)} %)`);
+  ok(tCv1 !== null && tCv1 >= 6 && tCv1 < 6.25, `warm-up starts with the occupied start (1/3 valve open ${hh(tCv1)})`);
+  ok(tHx2 !== null && bothHx && maxIso > 90, `HX-2 staged in on the warm-up (${hh(tHx2)})`);
+  ok(H.hx[1].iso1 < 10 && H.hx[1].iso2 === 0 && !H.lagHx, `HX-2 back out by 07:30 (iso1 ${H.hx[1].iso1.toFixed(0)})`);
+  ok(H.hx[0].iso1 > 90 && H.hx[0].iso2 === 1, 'HX-1 stays in service (lead)');
+  ok(tLag !== null, `lag pump proven on the warm-up (${hh(tLag)})`);
+  ok(at7 && Math.abs(at7.hws - at7.sp) < 6, `HWS within 6 °F of SP by 07:00 (${at7 && at7.hws.toFixed(1)} / ${at7 && at7.sp.toFixed(1)})`);
+  ok(maxQ > 1.5 * 450 && maxQ <= 900.001, `both exchangers carry the pull-up (peak ${maxQ.toFixed(0)} MBH, ≤ 2 × 450)`);
+  console.log(`  warm-up: CV1 open ${hh(tCv1)}, CV2 moving ${hh(tCv2)}, HX-2 in ${hh(tHx2)}, lag pump ${hh(tLag)}, HWS at 07:00 ${at7 && at7.hws.toFixed(1)} / ${at7 && at7.sp.toFixed(0)} °F`);
+
+  // (b) noon (Tue): one pump on loop dP, the 1/3 valve modulating, the 2/3 valve shut
+  const n = createSim({ seed: 7, startHour: 12 });
+  const nP = n.state.plant, nH = nP.hhw;
+  const bad = { pumps: 0, cv: 0, hws: 0, dp: 0 };
+  let k = 0;
+  run(n, 3600, {
+    speed: 60, dt: 0.1,
+    each: () => {
+      if (k++ % 5) return;
+      if ((proven(nP, 'HWP-1') ? 1 : 0) + (proven(nP, 'HWP-2') ? 1 : 0) !== 1) bad.pumps++;
+      if (!(nH.cv2 === 0 && nH.cv2Fb < 0.5 && nH.cv1 > 0 && nH.cv1 < 100)) bad.cv++;
+      if (Math.abs(nH.hws - nP.hwsSp) >= 4) bad.hws++;
+      if (Math.abs(nH.dp - nH.dpSp) >= 1) bad.dp++;
+    },
+  });
+  ok(bad.pumps === 0, `noon: exactly one HW pump proven (${bad.pumps} bad samples)`);
+  ok(bad.cv === 0, `noon: 2/3 valve shut, 1/3 valve between 0 and 100 % (${bad.cv} bad; cv1 ${nH.cv1.toFixed(1)} %)`);
+  ok(bad.hws === 0, `noon: HWS within 4 °F of SP (${bad.hws} bad; ${nH.hws.toFixed(1)} / ${nP.hwsSp.toFixed(1)})`);
+  ok(bad.dp === 0, `noon: loop dP within 1 psi of SP (${bad.dp} bad; ${nH.dp.toFixed(2)} / ${nH.dpSp})`);
+  ok(nH.hx[1].iso1 < 1 && !nH.lagHx && !nH.lagPump, 'noon: HX-2 and the lag pump out');
+  ok(nH.bypFb > 50, `noon: bypass open at low demand (${nH.bypFb.toFixed(0)} %)`);
+  ok(nH.steam > 0 && Math.abs(nH.steam - (nH.load * 1000) / 970) < 1e-6, 'steam lb/h follows the heat to the loop');
+  console.log(`  noon: ${['HWP-1', 'HWP-2'].find((id) => proven(nP, id))} at ${Math.max(nP.pumps['HWP-1'].speed, nP.pumps['HWP-2'].speed).toFixed(0)} %, CV1 ${nH.cv1.toFixed(1)} %, dP ${nH.dp.toFixed(2)} psi, HWS ${nH.hws.toFixed(1)} / ${nP.hwsSp.toFixed(1)} °F, bypass ${nH.bypFb.toFixed(0)} %`);
+
+  // (c) 02:00 unoccupied: everything off and shut
+  for (const mk of [() => createSim({ seed: 7, startHour: 2 }), () => { const x = createSim({ seed: 7, startHour: 12 }); x.setHour(2); return x; }]) {
+    const u = mk(), uP = u.state.plant, uH = uP.hhw;
+    ok(!uH.enabled && !uP.pumps['HWP-1'].on && !uP.pumps['HWP-2'].on && uP.pumps['HWP-1'].speed < 0.5 && uP.pumps['HWP-2'].speed < 0.5, '02:00: plant disabled, both pumps off');
+    ok([uH.cv1, uH.cv1Fb, uH.cv2, uH.cv2Fb, uH.byp].every((v) => v < 0.5) && uH.hx.every((x) => x.iso2 === 0 && x.iso1 < 0.5) && uH.dp < 0.1 && uH.load === 0, `02:00: valves shut, dP ${uH.dp.toFixed(3)}`);
+    ok(u.flowOf('hws-b1') === 0 && u.flowOf('hws-riser') === 0 && u.state.flows['hwr-b1'] === 0, '02:00: no HW flow');
+  }
+
+  // (d) the lead pump alternates daily
+  const d = createSim({ seed: 7, startHour: 9.5 });
+  const lead1 = d.state.plant.hhw.leadPump, p1 = proven(d.state.plant, lead1);
+  run(d, 24 * 3600, { speed: 3600, dt: 0.5 });
+  const lead2 = d.state.plant.hhw.leadPump, p2 = proven(d.state.plant, lead2);
+  ok(d.state.timeLabel.startsWith('Wed 09:'), `(d) a day on (${d.state.timeLabel})`);
+  ok(lead1 === 'HWP-2' && lead2 === 'HWP-1' && p1 && p2, `lead pump Tue ${lead1} → Wed ${lead2}, each proven`);
+  // the lead keeps alternating across the weekend: Fri and the Monday after lead on different pumps
+  const wk = createSim({ seed: 7, startHour: 9.5 });
+  const leads = {};
+  run(wk, 7 * 24 * 3600, { speed: 3600, dt: 0.5, each: (st) => { if (st.plant.hhw.enabled && st.hour > 10 && st.hour < 11) leads[st.timeLabel.slice(0, 3)] = st.plant.hhw.leadPump; } });
+  ok(leads.Fri && leads.Mon && leads.Fri !== leads.Mon && leads.Thu !== leads.Fri, `lead alternates across the weekend (${JSON.stringify(leads)})`);
+  // the lag pump stages in with HX-2 (two exchangers need two pumps' flow), and a visitor who drags
+  // the slider to 05:30 and lets go sees the morning warm-up stage HX-2 and both pumps in
+  let hxNoLag = 0;
+  const v = createSim({ seed: 7, startHour: 9.5 });
+  v.setHour(5.5);
+  let both = 0, hx2 = 0;
+  run(v, 3 * 3600, { speed: 60, dt: 0.1, each: (st) => {
+    const H = st.plant.hhw;
+    if (H.lagHx) { hx2++; if (!st.plant.pumps[H.leadPump === 'HWP-1' ? 'HWP-2' : 'HWP-1'].on) hxNoLag++; }
+    if (proven(st.plant, 'HWP-1') && proven(st.plant, 'HWP-2')) both++;
+  } });
+  ok(hx2 > 0 && both > 0, `slider to 05:30: HX-2 stages in (${(hx2 * 6 / 60).toFixed(0)} min) and both HW pumps run (${(both * 6 / 60).toFixed(0)} min)`);
+  ok(hxNoLag <= 6, `the lag pump follows HX-2 into service within 30 s (${hxNoLag * 6} s with HX-2 in and the lag pump off)`);
+
+  // (e) a normal day raises no HWS-low alarm (weekday and the Saturday after a cold start)
+  for (const [seed, h, hours] of [[7, 0.1, 24], [3, 0.1, 24], [7, 5.5, 72]]) {
+    const e = createSim({ seed, startHour: h });
+    let seen = 0, tempAl = 0;
+    run(e, hours * 3600, { speed: 600, dt: 1 / 30, each: (st) => { if (st.alarms.some((a) => a.id === 'hws-low')) seen++; if (st.plant.hhw.tempAlarm) tempAl++; } });
+    ok(seen === 0 && tempAl === 0, `no hws-low over ${hours} h (seed ${seed}, from ${h})`);
+  }
+  // the alarm path: a loop dumped 60 °F under SP mid-morning (armed, plant long running) stays
+  // more than 15 °F low for over 10 min, alarms on HHW-1, and clears once HWS recovers
+  const lo = createSim({ seed: 7, startHour: 10 });
+  lo.state.plant.hhw.hws = lo.state.plant.hwsSp - 60;
+  let raisedAt = null, k2 = 0, atRaise = null;
+  run(lo, 20 * 60, { speed: 60, dt: 0.1, each: (st) => {
+    k2++;
+    const al = st.alarms.find((a) => a.id === 'hws-low' && a.target === 'HHW-1');
+    if (raisedAt === null && al) {
+      raisedAt = k2 * 6;
+      const card = lo.describe('HHW-1');
+      atRaise = { text: al.text, status: card.status, alarmRow: card.rows.some((r) => /alarm/i.test(r[0])), flag: st.plant.hhw.tempAlarm };
+    }
+  } });
+  ok(raisedAt !== null && raisedAt >= 600, `hws-low raised on HHW-1 after the 10 min debounce (${raisedAt} s)`);
+  ok(!!atRaise && /^HW supply low · \d+\.\d °F \(SP \d+\)$/.test(atRaise.text), `hws-low text (${atRaise && atRaise.text})`);
+  ok(!!atRaise && atRaise.flag && atRaise.status === 'alarm' && atRaise.alarmRow, `HHW-1 card in alarm with an Alarm row while hws-low is up (${atRaise && JSON.stringify(atRaise)})`);
+  run(lo, 40 * 60, { speed: 60, dt: 0.1 });
+  ok(!lo.state.alarms.some((a) => a.id === 'hws-low') && !lo.state.plant.hhw.tempAlarm, `hws-low clears once HWS recovers (${lo.state.plant.hhw.hws.toFixed(1)} / ${lo.state.plant.hwsSp.toFixed(1)})`);
+}
+
+// =============================================================================================
+section('ports and routes');
+{
+  const sim = createSim();
+  const L = sim.layout;
+  const eq = new Map(L.equipment.map((e) => [e.id, e]));
+  // which way each port faces (design §2.3): the last leg of a run leaves the port along it
+  const FACE = { sa: [-1, 0, 0], ra: [1, 0, 0] };
+  const faceOf = (id, k) => {
+    if (id.startsWith('AHU')) return FACE[k] || [0, 0, id === 'AHU-1' ? 1 : -1]; // coil connections face the core
+    if (id === 'CWP-1') return k === 'suction' ? [-1, 0, 0] : [1, 0, 0];
+    if (id === 'HHW-1') return k === 'hws' ? [0, 0, 1] : [1, 0, 0];
+    return [-1, 0, 0]; // tower and chiller nozzles face west, toward the risers
+  };
+  ok(L.ports && typeof L.ports === 'object', 'layout.ports');
+  const want = ['AHU-1', 'AHU-2', 'CT-1', 'CH-1', 'CH-2', 'CWP-1', 'HHW-1'];
+  ok(want.every((id) => L.ports[id]) && Object.keys(L.ports).length === want.length, `ports for ${want.join(', ')}`);
+  const used = new Map();
+  let nEnds = 0;
+  for (const r of L.runs) {
+    ok(r.points.every((p, i) => i === 0 || [0, 1, 2].filter((a) => Math.abs(p[a] - r.points[i - 1][a]) > 1e-9).length === 1), `run ${r.id}: every segment axis-aligned, none zero-length`);
+    if (!r.ends) continue;
+    ok(Array.isArray(r.ends) && r.ends.length === 2 && r.ends.some(Boolean), `run ${r.id}: ends [start, end]`);
+    r.ends.forEach((ref, side) => {
+      if (!ref) return;
+      nEnds++;
+      const [id, k] = ref.split(':');
+      const p = L.ports[id]?.[k];
+      ok(!!p && eq.has(id), `run ${r.id}: port ${ref} exists`);
+      if (!p) return;
+      used.set(ref, (used.get(ref) || 0) + 1);
+      const end = side === 0 ? r.points[0] : r.points[r.points.length - 1];
+      const nxt = side === 0 ? r.points[1] : r.points[r.points.length - 2];
+      ok(end.every((v, a) => Math.abs(v - p[a]) < 1e-6), `run ${r.id} ${side ? 'ends' : 'starts'} at ${ref}`);
+      ok((side === 0 ? r.from : r.to) === id, `run ${r.id}: ${side ? 'to' : 'from'} is ${id}`);
+      const f = faceOf(id, k);
+      const d = [0, 1, 2].map((a) => nxt[a] - end[a]);
+      const along = d[0] * f[0] + d[1] * f[1] + d[2] * f[2];
+      const len = Math.hypot(...d);
+      ok(along > 0.05 && Math.abs(along - len) < 1e-9, `run ${r.id}: the leg at ${ref} leaves square to the port face`);
+    });
+  }
+  // every port is met once; CWP-1's discharge header feeds both chillers
+  for (const [id, ps] of Object.entries(L.ports)) for (const k of Object.keys(ps)) ok(used.get(`${id}:${k}`) === (id === 'CWP-1' && k === 'discharge' ? 2 : 1), `port ${id}:${k} is met by ${used.get(`${id}:${k}`) || 0} run(s)`);
+  // every run that serves a model's own connection meets it (no free end at a model)
+  for (const id of ['hws-b1', 'hwr-b1', 'cws-riser', 'cwr-riser', 'cws-b1', 'sa-riser-AHU-1', 'ra-riser-AHU-2', 'chws-CH-1', 'cwr-CH-2', 'cws-CH-1'])
+    ok(L.runs.find((r) => r.id === id)?.ends, `${id} meets its model at a port`);
+  // clearance: every run touching a port against every run of another kind, as drawn by flows.js
+  // (ducts are their boxes, pipes their cylinders + elbows; corner run-ons except at a port)
+  const boxes = (r) => {
+    const air = r.kind === 'sa' || r.kind === 'ra';
+    const w = Math.max(0.28, r.size), h = Math.max(0.22, r.size * 0.62), rr = Math.max(0.065, r.size * 0.55);
+    const ext = air ? w / 2 : rr * 0.2;
+    const out = [];
+    for (let i = 1; i < r.points.length; i++) {
+      const a = r.points[i - 1], b = r.points[i];
+      const ax = [0, 1, 2].find((k) => Math.abs(b[k] - a[k]) > 1e-9);
+      const lo = [0, 1, 2].map((k) => Math.min(a[k], b[k])), hi = [0, 1, 2].map((k) => Math.max(a[k], b[k]));
+      const eA = i === 1 && r.ends?.[0] ? 0 : ext, eB = i === r.points.length - 1 && r.ends?.[1] ? 0 : ext;
+      const sgn = b[ax] > a[ax] ? 1 : -1;
+      lo[ax] -= sgn > 0 ? eA : eB; hi[ax] += sgn > 0 ? eB : eA;
+      let half = [0, 0, 0];
+      if (air) half = ax === 1 ? [w / 2, 0, (w * 0.85) / 2] : ax === 0 ? [0, h / 2, w / 2] : [w / 2, h / 2, 0];
+      out.push({ lo: lo.map((v, k) => v - half[k]), hi: hi.map((v, k) => v + half[k]), r: air ? 0 : rr * 1.08, seg: i });
+    }
+    return out;
+  };
+  const gap = (A, B) => Math.hypot(...[0, 1, 2].map((k) => Math.max(0, A.lo[k] - B.hi[k], B.lo[k] - A.hi[k]))) - A.r - B.r;
+  const all = L.runs.map((r) => ({ r, b: boxes(r) }));
+  const clash = [];
+  let minGap = Infinity, minPair = '';
+  for (const P of all.filter((x) => x.r.ends)) {
+    for (const Q of all) {
+      if (Q.r.kind === P.r.kind || Q.r === P.r) continue;
+      for (const A of P.b) for (const B of Q.b) {
+        const g = gap(A, B);
+        if (g < minGap) { minGap = g; minPair = `${P.r.id}#${A.seg} / ${Q.r.id}#${B.seg}`; }
+        if (g < 0.02) clash.push(`${P.r.id}#${A.seg}~${Q.r.id}#${B.seg} ${g.toFixed(3)}`);
+      }
+    }
+  }
+  ok(clash.length === 0, `port runs clear every other service by ≥ 20 mm (${clash.slice(0, 6).join(', ')})`);
+  ok(nEnds === 27, `27 port ends (got ${nEnds})`);
+  console.log(`  ${nEnds} port ends on ${L.runs.filter((r) => r.ends).length} runs; tightest clearance ${(minGap * 1000).toFixed(0)} mm (${minPair})`);
 }
 
 // =============================================================================================
@@ -377,9 +658,13 @@ section('performance');
   }
   const sim = createSim();
   let t0 = now();
-  for (let h = 0; h < 24; h += 0.25) sim.setHour(h);
+  for (let h = 0; h < 24; h += 0.25) sim.setHour(h, { quick: true });
   const sh = (now() - t0) / 96;
-  ok(sh < 5, `setHour() cheap enough to scrub (${sh.toFixed(3)} ms)`);
+  ok(sh < 5, `setHour(h, { quick }) cheap enough to scrub (${sh.toFixed(3)} ms)`);
+  t0 = now();
+  for (const h of [3, 4.5, 5.5, 6.5, 7.25]) sim.setHour(h);
+  const shFull = (now() - t0) / 5;
+  ok(shFull < 150, `letting go on an early hour replays the night quickly enough (${shFull.toFixed(1)} ms)`);
   t0 = now();
   for (let i = 0; i < 5; i++) createSim({ seed: i });
   const cs = (now() - t0) / 5;

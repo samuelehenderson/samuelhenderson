@@ -9,9 +9,9 @@
  *
  * The app owns the render loop and steps the sim; the HUD drives it through
  * events (mode, time, play, speed, fault, clear, zoom, reset, explore,
- * select, close-card). Helpers: world.js (building), equipment.js, flows.js
- * (service runs), env.js (sky, ground, light), fx.js (brackets, alarms),
- * labels.js (DOM tags), shared.js.
+ * select, close-card). Helpers: world.js (building), units/ (the lazy chunk
+ * with ClarityView's equipment models), flows.js (service runs), env.js (sky,
+ * ground, light), fx.js (brackets, alarms), labels.js (DOM tags), shared.js.
  */
 import {
   NeutralToneMapping,
@@ -63,7 +63,10 @@ const wrapAngle = (a) => {
   return a - Math.PI;
 };
 
-export async function mountTwin({ stage, canvasHost, hud, sim, reducedMotion = false, coarsePointer = false }) {
+// one task per unit build step: let input and scrolling through between them
+const yieldTask = () => (globalThis.scheduler?.yield ? globalThis.scheduler.yield() : new Promise((r) => setTimeout(r, 0)));
+
+export async function mountTwin({ stage, canvasHost, hud, sim, reducedMotion = false, coarsePointer = false, unitsP = null }) {
   if (!canvasHost || !sim?.layout) throw new Error('mountTwin: missing host or sim');
   const layout = sim.layout;
   const levels = makeLevels(layout);
@@ -181,8 +184,34 @@ export async function mountTwin({ stage, canvasHost, hud, sim, reducedMotion = f
   const fx = createFx({ scene });
   const labels = createLabels({ host: canvasHost, layout, levels, coarsePointer });
 
+  // ClarityView's equipment models (the lazy units chunk, downloaded alongside this one)
+  let units = null;
+  try {
+    const mod = await (unitsP || import('./units/index.js'));
+    units = mod.createUnits({
+      layout,
+      levels,
+      world,
+      tier,
+      reducedMotion,
+      ref: {
+        get state() {
+          return sim.state;
+        },
+      },
+      dev: !!import.meta.env?.DEV,
+    });
+    world.attachUnits(units);
+    await units.build(yieldTask);
+  } catch (err) {
+    if (import.meta.env?.DEV) console.warn('[twin units] unavailable; drawing proxy boxes', err);
+  }
+  // anything without a model (the chunk failed to load) is a neutral box with the same id
+  world.addProxyEquipment();
+
   env.groundU.uPulse.value = reducedMotion ? 0 : 1;
   const applyTier = () => {
+    units?.setTier(tier);
     bloom.enabled = tier === 'high';
     env.setShadows(tier === 'high');
     renderer.shadowMap.needsUpdate = true;
@@ -349,12 +378,9 @@ export async function mountTwin({ stage, canvasHost, hud, sim, reducedMotion = f
     ndc.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
     raycaster.setFromCamera(ndc, camera);
     let best = null;
-    // equipment
-    for (const [id, item] of world.equipment) {
-      if (!item.group.parent?.visible) continue;
-      const hits = raycaster.intersectObject(item.group, true);
-      if (hits.length && (!best || hits[0].distance < best.d)) best = { id, d: hits[0].distance, kind: 'eq' };
-    }
+    // equipment: invisible boxes per unit and sub-part (never the models' triangles)
+    const eq = world.pickEquipment(raycaster);
+    if (eq) best = { id: eq.id, d: eq.d, kind: 'eq' };
     // zones (storey-height boxes) and VAVs
     let zoneHit = null;
     for (const m of world.pickZoneMeshes) {
@@ -381,9 +407,21 @@ export async function mountTwin({ stage, canvasHost, hud, sim, reducedMotion = f
     return { x: clientX - r.left, y: clientY - r.top };
   }
 
+  /**
+   * The card for an id: the sim's description; a sub-part the sim does not
+   * describe shows its unit's card.
+   */
+  function describe(id) {
+    const d = safe(() => sim.describe(id));
+    if (d || !units) return d;
+    const h = units.owner(id);
+    if (!h || id === h.id) return null;
+    return describe(h.id);
+  }
+
   function select(id, { focus = false, pos = null } = {}) {
     if (!id) return clearSelection();
-    const desc = safe(() => sim.describe(id));
+    const desc = describe(id);
     if (!desc) return clearSelection();
     selected = id;
     world.setSelected(id);
@@ -488,9 +526,14 @@ export async function mountTwin({ stage, canvasHost, hud, sim, reducedMotion = f
     }
   }
   on('mode', setMode);
+  // the slider's right end is the end of today, not midnight of the same day. While dragging, each
+  // frame settles quickly; letting go on an early-morning hour replays the night (sim.setHour)
   on('time', (h) => {
     const v = finite(+h, NaN);
-    // the slider's right end is the end of today, not midnight of the same day
+    if (Number.isFinite(v)) sim.setHour(clamp(v, 0, 23.99), { quick: true });
+  });
+  on('timeset', (h) => {
+    const v = finite(+h, NaN);
     if (Number.isFinite(v)) sim.setHour(clamp(v, 0, 23.99));
   });
   on('play', (b) => {
@@ -552,6 +595,7 @@ export async function mountTwin({ stage, canvasHost, hud, sim, reducedMotion = f
     fx.setResolution(W, H);
     flows.setPixelRatio(pr * (H / 900));
     world.setPixelRatio(pr * (H / 900));
+    units?.setPixelRatio(pr * (H / 900));
     const prevHero = { ...hero, target: hero.target.clone() };
     computeHero();
     // follow a changed hero framing only while the rig still sits on the old one
@@ -566,6 +610,7 @@ export async function mountTwin({ stage, canvasHost, hud, sim, reducedMotion = f
   fx.setResolution(W, H);
   flows.setPixelRatio(pixelRatio * (H / 900));
   world.setPixelRatio(pixelRatio * (H / 900));
+  units?.setPixelRatio(pixelRatio * (H / 900));
   const ro = new ResizeObserver(() => resize());
   ro.observe(canvasHost);
 
@@ -648,11 +693,14 @@ export async function mountTwin({ stage, canvasHost, hud, sim, reducedMotion = f
       });
       safe(() => bloom.dispose());
       safe(() => flows.setQuality?.('low'));
+      safe(() => units?.setTier('low'));
     }
   }
 
   /* ── frame ───────────────────────────────────────────────── */
   let simErrLogged = false;
+  let unitErrLogged = false;
+  const unitFrame = { camera, tanHalf: Math.tan(((FOV / 2) * Math.PI) / 180), selected: null, hover: null, reducedMotion, clock: 0 };
   let shadowTick = 0;
   const alarmPool = Array.from({ length: 6 }, () => ({ key: '', center: new Vector3(), size: new Vector3() }));
   if (import.meta.env?.DEV) renderer.info.autoReset = false;
@@ -725,6 +773,22 @@ export async function mountTwin({ stage, canvasHost, hud, sim, reducedMotion = f
       controls.update(dt);
     }
     updateCamera(dt, now);
+    // the VAV terminals' distance LOD, and the plant x-ray off while the camera is in the plant room
+    world.updateForCamera(camera.position);
+
+    // units: LOD by screen size (the selected / hovered one always full), live ticks on LOD0
+    if (units) {
+      try {
+        unitFrame.camera = camera;
+        unitFrame.selected = selected;
+        unitFrame.hover = hoverId;
+        unitFrame.clock = clock;
+        units.update(dt, now, unitFrame);
+      } catch (err) {
+        if (!unitErrLogged && import.meta.env?.DEV) console.warn('[twin units] update failed', err);
+        unitErrLogged = true;
+      }
+    }
 
     // hover
     if (pickDirty && interactive() && !coarsePointer) {
@@ -749,7 +813,7 @@ export async function mountTwin({ stage, canvasHost, hud, sim, reducedMotion = f
       cardTimer += dt;
       if (cardTimer > 0.25) {
         cardTimer = 0;
-        const desc = safe(() => sim.describe(selected));
+        const desc = describe(selected);
         if (desc) hud.showCard(desc, null);
       }
     }
@@ -822,16 +886,35 @@ export async function mountTwin({ stage, canvasHost, hud, sim, reducedMotion = f
   // first frame: compile shaders up front so the intro doesn't hitch
   applyIntro();
   updateCamera(0, performance.now());
+  // (both unit LODs and the hidden air streams included; whatever was hidden is hidden again after)
+  let compiledPrograms = null;
+  const hidden = [];
+  world.root.traverse((o) => {
+    if (!o.visible) hidden.push(o);
+  });
   try {
     const all = world.levelState.map((l) => l.reveal.value);
     world.levelState.forEach((l) => (l.reveal.value = 1));
     world.root.traverse((o) => (o.visible = true));
     fx.group.traverse((o) => (o.visible = true)); // fx.update() re-hides what isn't in use
-    await Promise.race([renderer.compileAsync(scene, camera), new Promise((r) => setTimeout(r, 2500))]);
+    // compile for the target the scene really renders into (the composer's buffer: linear, no
+    // tone mapping), or every program is compiled twice: once here, again on the first frame
+    const prevTarget = renderer.getRenderTarget();
+    renderer.setRenderTarget(composer.readBuffer);
+    let compiling;
+    try {
+      compiling = renderer.compileAsync(scene, camera);
+    } finally {
+      renderer.setRenderTarget(prevTarget);
+    }
+    if (import.meta.env?.DEV) compiledPrograms = renderer.info.programs?.length;
+    await Promise.race([compiling, new Promise((r) => setTimeout(r, 2500))]);
     world.levelState.forEach((l, i) => (l.reveal.value = all[i]));
   } catch {
     /* compile errors surface on first render; nothing to do here */
   }
+  for (const o of hidden) o.visible = false;
+  safe(() => units?.afterCompile());
   // the compile pass forced everything visible: re-apply the intro state
   world.resetIntro();
   lastIntroA = -1;
@@ -879,6 +962,7 @@ export async function mountTwin({ stage, canvasHost, hud, sim, reducedMotion = f
       safe(() => labels.destroy());
       safe(() => fx.dispose());
       safe(() => flows.dispose());
+      safe(() => units?.dispose());
       safe(() => world.dispose());
       safe(() => env.dispose());
       safe(() => bloom.dispose());
@@ -900,11 +984,15 @@ export async function mountTwin({ stage, canvasHost, hud, sim, reducedMotion = f
     api.debugView = (v) => {
       tween = null;
       userMoved = true;
+      // scripted close-ups may come nearer than a visitor can orbit (restored by a pose without it)
+      controls.minDistance = v.minDistance ?? 16;
       const r = currentRig();
       placeCtrlCam(v.target ? new Vector3(...v.target) : r.target.clone(), v.theta ?? r.theta, v.phi ?? r.phi, v.radius ?? r.radius);
     };
     api.debugInfo = () => ({ tier, pixelRatio, W, H, progress, mode, frame: emaFrame, calls: renderer.info.render.calls, tris: renderer.info.render.triangles, geos: renderer.info.memory.geometries, texs: renderer.info.memory.textures, progs: renderer.info.programs?.length });
-    api._dbg = { world, flows, env, scene, camera, renderer, sim };
+    api._dbg = { world, flows, env, scene, camera, renderer, sim, units, compiledPrograms };
+    api.debugSelect = (id) => select(id, { focus: true });
+    api.debugPick = (x, y) => pickAt(x, y);
     window.__twinApp = api;
   }
   return api;

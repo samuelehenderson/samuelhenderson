@@ -4,7 +4,7 @@
  *   createHud(root, { reducedMotion, coarsePointer }) → hud
  *
  *   hud.on(event, fn) → unsubscribe()
- *     'mode' (mode) · 'time' (hour) · 'play' (bool) · 'speed' (n) · 'fault' (kind)
+ *     'mode' (mode) · 'time' (hour, while dragging) · 'timeset' (hour, let go) · 'play' (bool) · 'speed' (n) · 'fault' (kind)
  *     'clear' · 'zoom' (+1|-1) · 'reset' · 'explore' (bool) · 'close-card' · 'select' (id)
  *   hud.setState(state, layout)   DOM writes throttled to ~4 Hz
  *   hud.setMode(mode)             'live' | 'thermal' | 'airflow' | 'exploded'
@@ -65,7 +65,7 @@ const LEGENDS = {
       ['RF · AHU-1, AHU-2, CT-1', 'sa'],
       ['L4–L6 · served by AHU-2', 'sa'],
       ['L1–L3 · served by AHU-1', 'sa'],
-      ['B1 · Chillers, boiler, pumps', 'chw'],
+      ['B1 · Chillers, HW plant, pumps', 'chw'],
     ],
   },
 };
@@ -561,7 +561,8 @@ export function createHud(root, { reducedMotion = false, coarsePointer = false }
   on(range, 'change', () => {
     userTime();
     if (timeRaf) cancelAnimationFrame(timeRaf);
-    flushTime();
+    timeRaf = 0;
+    emit('timeset', +range.value);   // the hour the visitor let go on (or keyed to)
   });
   on(range, 'pointerdown', () => {
     ui.dragging = true;

@@ -1,0 +1,584 @@
+/**
+ * Digital Twin units — freeze (LOD0) and bake (LOD1) for an embedded ClarityView view.
+ *
+ *   probe(view)                         what moves / changes when the values move
+ *   freeze(view, { canon })             merge every static mesh per (rigid body, material)
+ *   bake(root, { mats, coarse })        everything at its current pose → ≤ 3 vertex-coloured draws
+ *   coarser(geometry)                   a parametric curve with about half the facets (LOD1)
+ *   expandInstances(mesh, fn)           helper: each instance's matrix
+ *
+ * Generic on purpose: nothing here enumerates a family's parts. The probe drives
+ * the view's own resolver through four stimulus phases and watches transforms,
+ * visibility and material state, so whatever ClarityView animates stays a rigid
+ * body with its material identity intact, and everything else collapses.
+ */
+import {
+  BufferAttribute,
+  BufferGeometry,
+  Color,
+  Float32BufferAttribute,
+  LineBasicMaterial,
+  LineSegments,
+  Material,
+  Matrix4,
+  Mesh,
+  MeshStandardMaterial,
+  DoubleSide,
+} from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+
+const MAT_STATE = ['opacity', 'emissiveIntensity', 'visible', 'transparent', 'roughness', 'metalness'];
+const MAPS = ['map', 'alphaMap', 'aoMap', 'bumpMap', 'displacementMap', 'emissiveMap', 'envMap', 'lightMap', 'metalnessMap', 'normalMap', 'roughnessMap', 'specularMap', 'gradientMap', 'matcap'];
+const DEFAULT_OBC = Material.prototype.onBeforeCompile;
+
+function matState(m) {
+  let s = '';
+  for (const k of MAT_STATE) s += `${m[k]}|`;
+  if (m.color) s += m.color.getHex() + '|';
+  if (m.emissive) s += m.emissive.getHex();
+  return s;
+}
+/** Dedupe signature of a material, or null when it must keep its identity. */
+function signature(m) {
+  if (m.isShaderMaterial || m.onBeforeCompile !== DEFAULT_OBC || m.userData?.noDedupe) return null;
+  const p = [m.type, m.side, m.depthWrite, m.depthTest, m.blending, m.toneMapped, m.alphaTest, m.vertexColors, m.flatShading, m.wireframe,
+    m.polygonOffset, m.polygonOffsetFactor, m.polygonOffsetUnits, m.envMapIntensity, m.linewidth, m.fog, m.colorWrite, m.premultipliedAlpha,
+    m.dithering, m.alphaToCoverage, m.sheen, m.clearcoat, m.transmission, m.ior, m.reflectivity, m.specularIntensity, m.emissiveIntensity, JSON.stringify(m.defines || null)];
+  for (const k of MAPS) p.push(m[k]?.uuid || '');
+  return p.join(',') + '#' + matState(m);
+}
+const matsOf = (o) => (Array.isArray(o.material) ? o.material : o.material ? [o.material] : []);
+
+/**
+ * Drive the view through extreme values; report the objects whose transform,
+ * visibility or material reference changed, and the materials whose state changed.
+ * Leaves the live resolver in place and the values marked dirty.
+ */
+export function probe(view) {
+  const root = view.unit;
+  const objs = [];
+  root.traverse((o) => objs.push(o));
+  const snap = new Map(objs.map((o) => [o, { p: o.position.clone(), q: o.quaternion.clone(), s: o.scale.clone(), v: o.visible, m: o.material }]));
+  const mats = new Set();
+  for (const o of objs) for (const m of matsOf(o)) mats.add(m);
+  const msnap = new Map([...mats].map((m) => [m, matState(m)]));
+  const live = view._resolveLive;
+  const showAir = view.showAir;
+  view.showAir = false;
+  let now = performance.now();
+  const flt = /FLT|ALM|FAULT/;
+  const phases = [
+    (s) => ({ value: flt.test(s) ? 0 : 100, status: 'normal' }),
+    () => ({ value: 0, status: 'normal' }),
+    (s) => ({ value: flt.test(s) ? 1 : 50, status: 'normal' }),
+    (s) => ({ value: flt.test(s) ? 0 : 35, status: 'normal' }),
+  ];
+  // compared after every phase, not only the last: a part whose last-phase state happens
+  // to equal its live state (a damper the sim holds at 35 %) still moved in between
+  const moved = new Set();
+  const liveMats = new Set();
+  const look = () => {
+    // anything the probe added (it should add nothing: air is off) is treated as moving
+    root.traverse((o) => {
+      const a = snap.get(o);
+      if (!a || !o.position.equals(a.p) || !o.quaternion.equals(a.q) || !o.scale.equals(a.s) || o.visible !== a.v || o.material !== a.m) moved.add(o);
+    });
+    for (const m of mats) if (!liveMats.has(m) && matState(m) !== msnap.get(m)) liveMats.add(m);
+  };
+  try {
+    for (const ph of phases) {
+      view._resolveLive = ph;
+      view.dirty = true;
+      view._lastValues = -1e9;
+      for (let i = 0; i < 3; i++) {
+        now += 400;
+        view.tick(0.4, now);
+      }
+      look();
+    }
+  } finally {
+    view._resolveLive = live;
+    view.showAir = showAir;
+    view.dirty = true;
+    view._lastValues = -1e9;
+  }
+  root.traverse((o) => {
+    if (moved.has(o)) for (const m of matsOf(o)) liveMats.add(m);
+  });
+  return { moved, liveMats };
+}
+
+/** Settle the view on its live values (after a probe or before a bake). */
+export function settle(view, n = 3) {
+  view.dirty = true;
+  view._lastValues = -1e9;
+  let now = performance.now();
+  const air = view.showAir;
+  view.showAir = false;
+  for (let i = 0; i < n; i++) {
+    now += 300;
+    view.tick(1.5, now);
+  }
+  view.showAir = air;
+}
+
+function attrSig(g) {
+  const a = g.attributes;
+  let s = '';
+  for (const k of ['position', 'normal', 'uv', 'color']) if (a[k]) s += `${k}${a[k].itemSize}${a[k].normalized ? 'n' : ''};`;
+  return s + (g.index ? 'I' : 'N');
+}
+
+/**
+ * LOD0: merge every static Mesh / LineSegments under view.unit per (nearest
+ * moving ancestor, material, kind, shadow flags, render order, culling,
+ * attribute set). CSS2D readouts and never-visible static meshes are removed;
+ * empty static groups are pruned. `canon` is a Map shared by every unit on a
+ * level: identical untouched materials collapse to one.
+ */
+export function freeze(view, opts) {
+  return drain(freezeIter(view, opts));
+}
+
+/** Runs a step generator to the end (node checks, tests): returns its result. */
+export function drain(it) {
+  for (;;) {
+    const r = it.next();
+    if (r.done) return r.value;
+  }
+}
+
+/**
+ * A clock for a generator step: `if (slice.over()) { yield; slice.reset(); }`
+ * hands the main thread back once a slice has run for `budget` ms.
+ */
+function sliceClock(budget) {
+  let s0 = performance.now();
+  return { over: () => performance.now() - s0 > budget, reset: () => (s0 = performance.now()) };
+}
+
+/** freeze() as a generator: yields between merge buckets once `budget` ms have passed. */
+export function* freezeIter(view, { canon = new Map(), budget = Infinity } = {}) {
+  const root = view.unit;
+  const t0 = performance.now();
+  const slice = sliceClock(budget);
+  const { moved, liveMats } = probe(view);
+  const probeMs = performance.now() - t0;
+  root.updateMatrixWorld(true);
+  const isBody = (o) => o === root || moved.has(o);
+  // the representative of a signature is a private clone: a material some view
+  // animates (a shared level material can be live in one unit and static in
+  // another) must never stand in for another unit's static parts
+  const canonOf = (m) => {
+    if (liveMats.has(m)) return m;
+    const sig = signature(m);
+    if (!sig) return m;
+    if (!canon.has(sig)) {
+      const c = m.clone();
+      c.userData = { ...c.userData, canon: true };
+      canon.set(sig, c);
+    }
+    return canon.get(sig);
+  };
+  const buckets = new Map();
+  const victims = [];
+  let before = 0;
+  root.traverse((o) => {
+    if (o.isCSS2DObject) {
+      victims.push(o);
+      return;
+    }
+    if (o.userData?.air) return;
+    const merge = (o.isMesh && !o.isInstancedMesh && !o.isSkinnedMesh) || o.isLineSegments;
+    if (!merge || moved.has(o) || Array.isArray(o.material) || !o.material) return;
+    const g = o.geometry;
+    if (!g?.attributes?.position || o.morphTargetInfluences || Object.keys(g.morphAttributes || {}).length) return;
+    // the nearest moving ancestor (or the unit itself)
+    let b = o.parent;
+    let hidden = !o.visible;
+    while (b && !isBody(b)) {
+      if (!b.visible) hidden = true;
+      b = b.parent;
+    }
+    if (!b) return;
+    before++;
+    if (hidden || o.material.visible === false) {
+      // a static part that is never shown
+      victims.push(o);
+      return;
+    }
+    const mat = canonOf(o.material);
+    const line = !!o.isLineSegments;
+    const sig = attrSig(g);
+    const key = `${b.uuid}|${mat.uuid}|${line ? 'L' : 'M'}|${o.castShadow ? 1 : 0}${o.receiveShadow ? 1 : 0}|${o.renderOrder}|${o.frustumCulled ? 1 : 0}|${sig}`;
+    let bk = buckets.get(key);
+    if (!bk) buckets.set(key, (bk = { b, mat, line, cast: o.castShadow, recv: o.receiveShadow, order: o.renderOrder, culled: o.frustumCulled, list: [] }));
+    bk.list.push(o);
+  });
+  const inv = new Matrix4();
+  const rel = new Matrix4();
+  let after = 0;
+  for (const bk of buckets.values()) {
+    if (slice.over()) {
+      yield;
+      slice.reset();
+    }
+    const only = bk.list.length === 1 ? bk.list[0] : null;
+    if (only && only.parent === bk.b) {
+      // a lone static mesh stays as it is (on its canonical material)
+      only.material = bk.mat;
+      after++;
+      continue;
+    }
+    inv.copy(bk.b.matrixWorld).invert();
+    const geos = [];
+    for (const o of bk.list) {
+      const g = o.geometry.clone();
+      g.clearGroups();
+      for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv', 'color'].includes(k)) g.deleteAttribute(k);
+      if (bk.line) for (const k of Object.keys(g.attributes)) if (k !== 'position' && k !== 'color') g.deleteAttribute(k);
+      rel.multiplyMatrices(inv, o.matrixWorld);
+      g.applyMatrix4(rel);
+      if (!bk.line) fixWinding(g, rel);
+      geos.push(g);
+    }
+    const merged = geos.length === 1 ? geos[0] : mergeGeometries(geos);
+    if (geos.length > 1) geos.forEach((g) => g.dispose());
+    if (!merged) {
+      after += bk.list.length;
+      continue;
+    }
+    merged.computeBoundingSphere();
+    merged.computeBoundingBox();
+    const mesh = bk.line ? new LineSegments(merged, bk.mat) : new Mesh(merged, bk.mat);
+    mesh.castShadow = bk.cast;
+    mesh.receiveShadow = bk.recv;
+    mesh.renderOrder = bk.order;
+    mesh.frustumCulled = bk.culled;
+    mesh.userData.frozen = true;
+    for (const o of bk.list) victims.push(o);
+    bk.b.add(mesh);
+    after++;
+  }
+  for (const o of victims) o.removeFromParent();
+  // prune now-empty static groups
+  const prune = (o) => {
+    for (const c of [...o.children]) prune(c);
+    if (o !== root && !isBody(o) && o.type === 'Group' && o.children.length === 0) o.removeFromParent();
+  };
+  prune(root);
+  return { moved, liveMats, probeMs: +probeMs.toFixed(1), totalMs: +(performance.now() - t0).toFixed(1), meshesBefore: before, meshesAfter: after };
+}
+
+/**
+ * A piece moved into another frame by a mirroring matrix keeps its triangles'
+ * winding, so once merged with unmirrored pieces it would render inside out:
+ * flip its triangles back (indexed: swap two corners; non-indexed: two vertices).
+ */
+export function fixWinding(g, m) {
+  if (m.determinant() >= 0) return;
+  if (g.index) {
+    const a = g.index.array;
+    for (let i = 0; i + 2 < a.length; i += 3) {
+      const t = a[i + 1];
+      a[i + 1] = a[i + 2];
+      a[i + 2] = t;
+    }
+    g.index.needsUpdate = true;
+    return;
+  }
+  for (const attr of Object.values(g.attributes)) {
+    const a = attr.array;
+    const s = attr.itemSize;
+    for (let v = 0; v + 2 < attr.count; v += 3) {
+      for (let k = 0; k < s; k++) {
+        const i1 = (v + 1) * s + k;
+        const i2 = (v + 2) * s + k;
+        const t = a[i1];
+        a[i1] = a[i2];
+        a[i2] = t;
+      }
+    }
+    attr.needsUpdate = true;
+  }
+}
+
+/** Calls fn(matrix) for each instance of an InstancedMesh (or once with identity for a plain mesh). */
+const _im = new Matrix4();
+export function eachInstance(o, fn) {
+  if (!o.isInstancedMesh) return fn(null);
+  for (let i = 0; i < o.count; i++) {
+    o.getMatrixAt(i, _im);
+    fn(_im);
+  }
+}
+
+/**
+ * Per-level bake materials: opaque vertex colour, faint glass, dark outlines.
+ * Shared by every unit on a level (and patched once per level by the host).
+ */
+export function bakeMaterials() {
+  return {
+    solid: new MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.35, envMapIntensity: 0.6 }),
+    glass: new MeshStandardMaterial({ vertexColors: true, roughness: 0.3, metalness: 0, transparent: true, opacity: 0.06, depthWrite: false, side: DoubleSide }),
+    line: new LineBasicMaterial({ color: '#07090b', transparent: true, opacity: 0.9 }),
+  };
+}
+
+/*
+ * LOD1 re-tessellation. The baked copy is seen small (or, on phones, in place of the live
+ * model), so its curved parts can carry half the facets: a parametric geometry (torus,
+ * sphere, cylinder, cone, capsule, tube, lathe, circle, ring) is rebuilt with about half the
+ * segments. Only when the mesh's geometry is exactly what its parameters generate: one that
+ * was translated, rotated, scaled or re-coloured after it was made is kept as it is (it is
+ * regenerated with the same parameters and compared vertex by vertex).
+ */
+const half = (n, min) => Math.max(min, Math.ceil((n || min) / 2));
+const COARSE = {
+  TorusGeometry: (p) => [[p.radius, p.tube, p.radialSegments, p.tubularSegments, p.arc], [p.radius, p.tube, half(p.radialSegments, 4), half(p.tubularSegments, 8), p.arc]],
+  SphereGeometry: (p) => [
+    [p.radius, p.widthSegments, p.heightSegments, p.phiStart, p.phiLength, p.thetaStart, p.thetaLength],
+    [p.radius, half(p.widthSegments, 8), half(p.heightSegments, 5), p.phiStart, p.phiLength, p.thetaStart, p.thetaLength],
+  ],
+  CylinderGeometry: (p) => [
+    [p.radiusTop, p.radiusBottom, p.height, p.radialSegments, p.heightSegments, p.openEnded, p.thetaStart, p.thetaLength],
+    [p.radiusTop, p.radiusBottom, p.height, half(p.radialSegments, 8), 1, p.openEnded, p.thetaStart, p.thetaLength],
+  ],
+  ConeGeometry: (p) => [
+    [p.radius, p.height, p.radialSegments, p.heightSegments, p.openEnded, p.thetaStart, p.thetaLength],
+    [p.radius, p.height, half(p.radialSegments, 8), 1, p.openEnded, p.thetaStart, p.thetaLength],
+  ],
+  CapsuleGeometry: (p) => [[p.radius, p.length, p.capSegments, p.radialSegments], [p.radius, p.length, half(p.capSegments, 2), half(p.radialSegments, 8)]],
+  TubeGeometry: (p) => [[p.path, p.tubularSegments, p.radius, p.radialSegments, p.closed], [p.path, half(p.tubularSegments, 4), p.radius, half(p.radialSegments, 6), p.closed]],
+  LatheGeometry: (p) => [[p.points, p.segments, p.phiStart, p.phiLength], [p.points, half(p.segments, 8), p.phiStart, p.phiLength]],
+  CircleGeometry: (p) => [[p.radius, p.segments, p.thetaStart, p.thetaLength], [p.radius, half(p.segments, 8), p.thetaStart, p.thetaLength]],
+  RingGeometry: (p) => [
+    [p.innerRadius, p.outerRadius, p.thetaSegments, p.phiSegments, p.thetaStart, p.thetaLength],
+    [p.innerRadius, p.outerRadius, half(p.thetaSegments, 8), 1, p.thetaStart, p.thetaLength],
+  ],
+};
+const coarseCache = new WeakMap();
+/** A coarser copy of a parametric geometry (see above), or null to keep the original. */
+export function coarser(geo) {
+  if (!geo || !geo.parameters || geo.attributes.color || geo.morphAttributes?.position) return null;
+  if (coarseCache.has(geo)) return coarseCache.get(geo);
+  let out = null;
+  const spec = COARSE[geo.type];
+  try {
+    if (spec) {
+      const Ctor = geo.constructor;
+      const [same, less] = spec(geo.parameters);
+      const ref = new Ctor(...same);
+      const a = geo.attributes.position;
+      const b = ref.attributes.position;
+      let match = a.count === b.count && !!geo.index === !!ref.index;
+      for (let i = 0; match && i < a.count; i++) {
+        if (Math.abs(a.getX(i) - b.getX(i)) > 1e-5 || Math.abs(a.getY(i) - b.getY(i)) > 1e-5 || Math.abs(a.getZ(i) - b.getZ(i)) > 1e-5) match = false;
+      }
+      ref.dispose();
+      if (match) {
+        const c = new Ctor(...less);
+        const n = (g) => (g.index ? g.index.count : g.attributes.position.count);
+        if (n(c) < n(geo)) out = c;
+        else c.dispose();
+      }
+    }
+  } catch {
+    out = null;
+  }
+  coarseCache.set(geo, out);
+  return out;
+}
+
+const _col = new Color();
+/**
+ * Prepares one mesh's geometry for a bake, in `root`'s frame: position, normal
+ * (meshes) and a colour attribute from the material (times the geometry's own
+ * colours where the material uses them). Emissive state is NOT baked in: LOD1
+ * is a static copy and never claims a running fan or an open valve.
+ * Returns an indexed geometry (or null).
+ */
+export function bakePiece(o, rel, { line = false, colorOverride = null, coarse = false } = {}) {
+  const m = Array.isArray(o.material) ? o.material[0] : o.material;
+  const src = (coarse && !line && coarser(o.geometry)) || o.geometry;
+  if (!src?.attributes?.position) return null;
+  const g = src.clone();
+  for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'color'].includes(k)) g.deleteAttribute(k);
+  for (const k of Object.keys(g.morphAttributes || {})) delete g.morphAttributes[k];
+  g.clearGroups();
+  if (line) {
+    for (const k of Object.keys(g.attributes)) if (k !== 'position') g.deleteAttribute(k);
+  } else {
+    if (!g.attributes.normal) g.computeVertexNormals();
+    const n = g.attributes.position.count;
+    const c = new Float32Array(n * 3);
+    _col.copy(colorOverride || m?.color || _col.set(1, 1, 1));
+    const vc = !colorOverride && m?.vertexColors && src.attributes.color;
+    const sc = vc ? src.attributes.color : null;
+    for (let i = 0; i < n; i++) {
+      let r = _col.r;
+      let gg = _col.g;
+      let b = _col.b;
+      if (sc) {
+        r *= sc.getX(i);
+        gg *= sc.getY(i);
+        b *= sc.getZ(i);
+      }
+      c[i * 3] = r;
+      c[i * 3 + 1] = gg;
+      c[i * 3 + 2] = b;
+    }
+    g.setAttribute('color', new Float32BufferAttribute(c, 3));
+  }
+  if (!g.index) {
+    const n = g.attributes.position.count;
+    const idx = n > 65535 ? new Uint32Array(n) : new Uint16Array(n);
+    for (let i = 0; i < n; i++) idx[i] = i;
+    g.setIndex(new BufferAttribute(idx, 1));
+  }
+  g.applyMatrix4(rel);
+  if (!line) fixWinding(g, rel);
+  return g;
+}
+
+/**
+ * LOD1: every visible mesh and line under root (moving parts at their current
+ * pose, instanced meshes expanded) merged into at most three objects in root's
+ * own frame: opaque, glass (opacity < 0.6) and outlines. With `coarse`, curved
+ * parametric parts are re-tessellated with about half the facets (coarser()):
+ * bake before freeze, which merges those geometries away. The caller gives the
+ * returned group root's local transform (a mirrored unit stays mirrored in its
+ * object matrix, where three fixes the winding).
+ * Also returns `xray`: the opaque parts with a bbox diagonal ≥ xrayMin, position + normal only.
+ */
+export function bake(root, opts) {
+  return drain(bakeIter(root, opts));
+}
+
+/** bake() as a generator: yields between pieces once `budget` ms have passed. */
+export function* bakeIter(root, { mats, xrayMin = 0.25, skip = null, budget = Infinity, coarse = false } = {}) {
+  const slice = sliceClock(budget);
+  root.updateMatrixWorld(true);
+  const inv = new Matrix4().copy(root.matrixWorld).invert();
+  const rel = new Matrix4();
+  const relI = new Matrix4();
+  const groups = { solid: [], glass: [], line: [], xray: [] };
+  const list = [];
+  root.traverseVisible((o) => {
+    if (o === root || o.userData?.air || o.isPoints || o.isCSS2DObject) return;
+    if (skip && skip(o)) return;
+    if (o.isMesh || o.isLineSegments) list.push(o);
+  });
+  for (const o of list) {
+    if (slice.over()) {
+      yield;
+      slice.reset();
+    }
+    const m = Array.isArray(o.material) ? o.material[0] : o.material;
+    if (!m || m.visible === false || m.isShaderMaterial) continue;
+    const kind = o.isLineSegments ? 'line' : m.transparent && m.opacity < 0.6 ? 'glass' : 'solid';
+    rel.multiplyMatrices(inv, o.matrixWorld);
+    eachInstance(o, (im) => {
+      const r = im ? relI.multiplyMatrices(rel, im) : rel;
+      const g = bakePiece(o, r, { line: kind === 'line', coarse });
+      if (!g) return;
+      groups[kind].push(g);
+      if (kind === 'solid' && xrayMin > 0) {
+        g.computeBoundingBox();
+        const bb = g.boundingBox;
+        const diag = Math.hypot(bb.max.x - bb.min.x, bb.max.y - bb.min.y, bb.max.z - bb.min.z);
+        if (diag >= xrayMin) groups.xray.push(g);
+      }
+    });
+  }
+  if (slice.over()) yield;
+  const out = { solid: null, glass: null, line: null, xray: null, tris: 0, draws: 0 };
+  for (const k of ['solid', 'glass', 'line']) {
+    const list = groups[k];
+    if (!list.length) continue;
+    const g = list.length === 1 ? list[0] : mergeGeometries(list);
+    if (!g) continue;
+    g.computeBoundingSphere();
+    g.computeBoundingBox();
+    const o = k === 'line' ? new LineSegments(g, mats.line) : new Mesh(g, mats[k]);
+    o.userData.baked = k;
+    if (k === 'solid') o.castShadow = true;
+    if (k === 'glass') o.renderOrder = 2;
+    out[k] = o;
+    out.draws++;
+    if (k !== 'line') out.tris += (g.index ? g.index.count : g.attributes.position.count) / 3;
+  }
+  if (groups.xray.length) {
+    const pieces = groups.xray.map((g) => {
+      const x = g.clone();
+      x.deleteAttribute('color');
+      return x;
+    });
+    out.xray = pieces.length === 1 ? pieces[0] : mergeGeometries(pieces);
+    pieces.forEach((p) => p !== out.xray && p.dispose());
+  }
+  for (const k of ['solid', 'glass', 'line']) for (const g of groups[k]) if (groups[k].length > 1) g.dispose();
+  out.tris = Math.round(out.tris);
+  return out;
+}
+
+/**
+ * Vertex clustering: snaps every vertex to a `cell`-metre grid (cell average),
+ * drops triangles that collapse and recomputes smooth normals. A silhouette-
+ * grade copy of an indexed position geometry (the B1 x-ray rim shader needs
+ * no more than that). Returns a new indexed geometry (position + normal).
+ */
+export function cluster(g, cell) {
+  const pos = g.attributes.position;
+  const n = pos.count;
+  const idx = g.index ? g.index.array : null;
+  const inv = 1 / cell;
+  const keyOf = new Map();
+  const remap = new Uint32Array(n);
+  const sum = [];
+  for (let i = 0; i < n; i++) {
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const z = pos.getZ(i);
+    const k = `${Math.round(x * inv)},${Math.round(y * inv)},${Math.round(z * inv)}`;
+    let c = keyOf.get(k);
+    if (c === undefined) {
+      c = sum.length / 4;
+      keyOf.set(k, c);
+      sum.push(0, 0, 0, 0);
+    }
+    remap[i] = c;
+    sum[c * 4] += x;
+    sum[c * 4 + 1] += y;
+    sum[c * 4 + 2] += z;
+    sum[c * 4 + 3]++;
+  }
+  const m = sum.length / 4;
+  const p = new Float32Array(m * 3);
+  for (let c = 0; c < m; c++) {
+    const w = sum[c * 4 + 3];
+    p[c * 3] = sum[c * 4] / w;
+    p[c * 3 + 1] = sum[c * 4 + 1] / w;
+    p[c * 3 + 2] = sum[c * 4 + 2] / w;
+  }
+  const tris = idx ? idx.length : n;
+  const out = [];
+  const seen = new Set();
+  for (let t = 0; t + 2 < tris; t += 3) {
+    const a = remap[idx ? idx[t] : t];
+    const b = remap[idx ? idx[t + 1] : t + 1];
+    const c = remap[idx ? idx[t + 2] : t + 2];
+    if (a === b || b === c || a === c) continue;
+    // one triangle per cell triple and winding
+    const lo = Math.min(a, b, c);
+    const k = lo === a ? `${a},${b},${c}` : lo === b ? `${b},${c},${a}` : `${c},${a},${b}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(a, b, c);
+  }
+  const r = new BufferGeometry();
+  r.setAttribute('position', new BufferAttribute(p, 3));
+  r.setIndex(out.length && m > 65535 ? new BufferAttribute(new Uint32Array(out), 1) : out);
+  r.computeVertexNormals();
+  return r;
+}

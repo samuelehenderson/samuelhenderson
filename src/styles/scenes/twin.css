@@ -807,6 +807,64 @@
   text-shadow: 0 1px 8px rgba(0, 0, 0, 0.9);
 }
 
+/* Exterior: how much of a building is wrapped round the model */
+.thud-ext {
+  display: grid;
+  gap: 7px;
+  width: 268px;
+  padding: 8px 8px 8px;
+  border-radius: 12px;
+}
+.thud-ext__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-left: 5px; }
+.thud-ext__lbl {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+.thud-ext__inside {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 26px;
+  padding: 0 4px 0 6px;
+  border-radius: 7px;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  transition: color var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out);
+}
+/* a small switch: the knob slides right and turns accent when on */
+.thud-ext__inside i {
+  position: relative;
+  width: 24px;
+  height: 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+  transition: background var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+}
+.thud-ext__inside i::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--color-text-muted);
+  transition: transform var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
+}
+.thud-ext__inside[aria-pressed="true"] { color: var(--color-text); }
+.thud-ext__inside[aria-pressed="true"] i { background: rgba(78, 168, 255, 0.28); box-shadow: inset 0 0 0 1px rgba(78, 168, 255, 0.55); }
+.thud-ext__inside[aria-pressed="true"] i::after { transform: translateX(10px); background: var(--color-text); }
+.thud-ext__inside:disabled { opacity: 0.4; cursor: default; }
+.thud-seg--ext { display: flex; }
+.thud-seg--ext button { flex: 1; min-width: 0; padding: 0 0.3rem; }
+
 /* Inspect picker: a keyboard route to any machine or floor */
 .thud-inspect {
   display: flex;
@@ -1337,11 +1395,14 @@ dd[data-status="alarm"] .thud-st { background: var(--twin-alarm); box-shadow: 0 
     border-top: 1px solid var(--twin-panel-border) !important;
   }
   .thud-legend { order: 4; display: none; width: auto; }
-  .thud-inspect { order: 5; display: none; width: auto; padding: 0 !important; }
+  .thud-ext { order: 5; display: none; width: auto; }
+  .thud-ext .thud-seg button { height: 34px; }
+  .thud-inspect { order: 6; display: none; width: auto; padding: 0 !important; }
   .thud-root.is-expanded .thud-dock { display: flex; }
   .thud-root.is-expanded .thud-alarms { display: none; }
   .thud-root.is-expanded .thud-legend { display: block; }
   .thud-root.is-expanded .thud-inspect { display: flex; }
+  .thud-root.is-expanded .thud-ext { display: grid; }
 
   /* Row 1: play + time. Row 2: speed · fault · clear */
   .thud-time { flex: 1 1 calc(100% - 52px); min-width: 0; gap: 10px; }

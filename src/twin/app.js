@@ -39,6 +39,7 @@ import { clamp, damp, easeInOutCubic, finite, lerp, makeLevels, smoothstep } fro
 import { createWorld } from './world.js';
 import { createFlows } from './flows.js';
 import { createEnv } from './env.js';
+import { createExterior, EXTERIOR_LEVELS } from './exterior.js';
 import { createFx } from './fx.js';
 import { createLabels } from './labels.js';
 
@@ -179,6 +180,17 @@ export async function mountTwin({ stage, canvasHost, hud, sim, reducedMotion = f
   const env = createEnv({ scene, layout, quality: tier });
   const world = createWorld({ layout, levels, quality: tier, modeU, ctxU });
   scene.add(world.root);
+  // the skin the visitor can wrap round the model (HUD: Exterior). Starts at "facade", one wall open.
+  const exterior = createExterior({ layout, quality: tier });
+  scene.add(exterior.group);
+  {
+    // ?exterior=off|shell|facade|site and ?inside=0 set the opening state (handy for sharing a look)
+    let q = null;
+    try { q = new URLSearchParams(window.location.search); } catch { /* no window */ }
+    const want = EXTERIOR_LEVELS.indexOf(q?.get('exterior') ?? '');
+    exterior.setLevel(want >= 0 ? want : 2);
+    exterior.setInside(q?.get('inside') !== '0');
+  }
   const flows = createFlows({ layout, levels, levelU, modeU, ctxU, quality: tier });
   scene.add(flows.group);
   const fx = createFx({ scene });
@@ -526,6 +538,12 @@ export async function mountTwin({ stage, canvasHost, hud, sim, reducedMotion = f
     }
   }
   on('mode', setMode);
+  on('exterior', (id) => {
+    const n = EXTERIOR_LEVELS.indexOf(id);
+    if (n >= 0) exterior.setLevel(n);
+  });
+  on('inside', (b) => exterior.setInside(!!b));
+  hud.setExterior?.(EXTERIOR_LEVELS[exterior.level], exterior.inside);
   // the slider's right end is the end of today, not midnight of the same day. While dragging, each
   // frame settles quickly; letting go on an early-morning hour replays the night (sim.setHour)
   on('time', (h) => {
@@ -745,6 +763,13 @@ export async function mountTwin({ stage, canvasHost, hud, sim, reducedMotion = f
     world.applyLevelTransforms(levels.explode, mix.explode);
     world.setModeVisuals({ thermal: mix.thermal, air: mix.air, explode: mix.explode, xray: mix.explode });
     flows.setModeVisuals({ thermal: mix.thermal, air: mix.air });
+    // the exterior steps aside while the model assembles or is exploded, and opens a wall in the see-in modes
+    exterior.update(dt, camera, {
+      reducedMotion,
+      shown: progress >= 0.45 && mode !== 'exploded',
+      forceOpen: mode === 'thermal' || mode === 'airflow',
+      night: env.night,
+    });
     env.groundU.uRect.value.z = 22 + 20 * mix.explode;
     env.groundU.uXray.value = 1 + 0.4 * mix.explode;
 
@@ -963,6 +988,7 @@ export async function mountTwin({ stage, canvasHost, hud, sim, reducedMotion = f
       safe(() => fx.dispose());
       safe(() => flows.dispose());
       safe(() => units?.dispose());
+      safe(() => exterior.dispose());
       safe(() => world.dispose());
       safe(() => env.dispose());
       safe(() => bloom.dispose());
@@ -990,7 +1016,7 @@ export async function mountTwin({ stage, canvasHost, hud, sim, reducedMotion = f
       placeCtrlCam(v.target ? new Vector3(...v.target) : r.target.clone(), v.theta ?? r.theta, v.phi ?? r.phi, v.radius ?? r.radius);
     };
     api.debugInfo = () => ({ tier, pixelRatio, W, H, progress, mode, frame: emaFrame, calls: renderer.info.render.calls, tris: renderer.info.render.triangles, geos: renderer.info.memory.geometries, texs: renderer.info.memory.textures, progs: renderer.info.programs?.length });
-    api._dbg = { world, flows, env, scene, camera, renderer, sim, units, compiledPrograms };
+    api._dbg = { world, flows, env, scene, camera, renderer, sim, units, compiledPrograms, exterior };
     api.debugSelect = (id) => select(id, { focus: true });
     api.debugPick = (x, y) => pickAt(x, y);
     window.__twinApp = api;

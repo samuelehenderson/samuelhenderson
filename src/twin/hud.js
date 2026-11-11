@@ -8,6 +8,7 @@
  *     'clear' · 'zoom' (+1|-1) · 'reset' · 'explore' (bool) · 'close-card' · 'select' (id)
  *   hud.setState(state, layout)   DOM writes throttled to ~4 Hz
  *   hud.setMode(mode)             'live' | 'thermal' | 'airflow' | 'exploded'
+ *   hud.setExterior(level, inside?) 'off' | 'shell' | 'facade' | 'site'; emits 'exterior' (level) and 'inside' (bool)
  *   hud.showCard(desc | null, { x, y } | null)
  *                                 desc = sim.describe(id); x/y are CSS px from the
  *                                 stage's top-left. Docked at the bottom on small screens.
@@ -136,6 +137,8 @@ export function createHud(root, { reducedMotion = false, coarsePointer = false }
 
   const ui = {
     mode: 'live',
+    exterior: 'facade',
+    inside: true,
     playing: true,
     speed: 60,
     exploring: false,
@@ -269,6 +272,28 @@ export function createHud(root, { reducedMotion = false, coarsePointer = false }
     inspectSel,
   );
 
+  // Exterior: how much of a real building is wrapped round the model, and whether one wall stays open
+  const EXT = [
+    { id: 'off', label: 'Off', title: 'No exterior: the see-through model' },
+    { id: 'shell', label: 'Shell', title: 'Frame and glass' },
+    { id: 'facade', label: 'Facade', title: 'Frame, glass, fins and the entrance' },
+    { id: 'site', label: 'Site', title: 'The full facade, with trees, lamps and a plaza' },
+  ];
+  const extBtns = EXT.map((x) => el('button', { type: 'button', 'data-ext': x.id, 'aria-pressed': String(x.id === ui.exterior), title: x.title, text: x.label }));
+  const insideBtn = el('button', {
+    type: 'button',
+    class: 'thud-ext__inside',
+    'aria-pressed': String(ui.inside),
+    title: 'Open the wall facing you, so the systems stay in view',
+    html: '<i aria-hidden="true"></i><span>See inside</span>',
+  });
+  const exterior = el(
+    'div',
+    { class: 'thud-panel thud-ext' },
+    el('div', { class: 'thud-ext__head' }, el('span', { class: 'thud-ext__lbl', id: `${id}-ext`, text: 'Exterior' }), insideBtn),
+    el('div', { class: 'thud-seg thud-seg--ext', role: 'group', 'aria-labelledby': `${id}-ext` }, extBtns),
+  );
+
   // Dock: play · time · speed · faults · clear
   const playBtn = el('button', { type: 'button', class: 'thud-play', 'aria-label': 'Pause simulation', html: ICON.pause });
   const range = el('input', {
@@ -400,7 +425,7 @@ export function createHud(root, { reducedMotion = false, coarsePointer = false }
     'div',
     { class: 'thud-layer' },
     el('div', { class: 'thud-left' }, status, alarms),
-    el('div', { class: 'thud-sheet' }, el('div', { class: 'thud-right' }, modes, legend, inspect, hint), el('div', { class: 'thud-bottom' }, dock), view),
+    el('div', { class: 'thud-sheet' }, el('div', { class: 'thud-right' }, modes, legend, exterior, inspect, hint), el('div', { class: 'thud-bottom' }, dock), view),
   );
 
   const leftCol = layer.querySelector('.thud-left');
@@ -438,6 +463,16 @@ export function createHud(root, { reducedMotion = false, coarsePointer = false }
       );
     }
     legend.replaceChildren(...children);
+  }
+
+  function setExterior(level, inside) {
+    if (EXT.some((x) => x.id === level)) {
+      ui.exterior = level;
+      for (const b of extBtns) b.setAttribute('aria-pressed', String(b.dataset.ext === level));
+    }
+    if (typeof inside === 'boolean') ui.inside = inside;
+    insideBtn.setAttribute('aria-pressed', String(ui.inside));
+    insideBtn.disabled = ui.exterior === 'off';
   }
 
   function setMode(mode) {
@@ -530,6 +565,16 @@ export function createHud(root, { reducedMotion = false, coarsePointer = false }
       emit('mode', b.dataset.mode);
     });
   }
+  for (const b of extBtns) {
+    on(b, 'click', () => {
+      setExterior(b.dataset.ext);
+      emit('exterior', b.dataset.ext);
+    });
+  }
+  on(insideBtn, 'click', () => {
+    setExterior(null, !ui.inside);
+    emit('inside', ui.inside);
+  });
   for (const b of speedBtns) {
     on(b, 'click', () => {
       const n = +b.dataset.speed;
@@ -1177,6 +1222,7 @@ export function createHud(root, { reducedMotion = false, coarsePointer = false }
     },
     setState,
     setMode,
+    setExterior,
     showCard,
     setLoading,
     setReady,
